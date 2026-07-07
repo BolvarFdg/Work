@@ -1,0 +1,149 @@
+diff --git a/vllm_ascend/models/deepseek_v4.py b/vllm_ascend/models/deepseek_v4.py
+index f516c35e..356a92c7 100644
+--- a/vllm_ascend/models/deepseek_v4.py
++++ b/vllm_ascend/models/deepseek_v4.py
+@@ -56,7 +56,7 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
+ from vllm.model_executor.layers.quantization import QuantizationConfig
+ from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+ from vllm.model_executor.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
+-from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsEagle, SupportsLoRA, SupportsPP
++from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsEagle, SupportsEagle3, SupportsLoRA, SupportsPP
+ from vllm.model_executor.models.utils import (
+     PPMissingLayer,
+     is_pp_missing_parameter,
+@@ -1068,6 +1068,11 @@ class DeepseekV4Model(nn.Module):
+         self.hc_head_base = nn.Parameter(torch.empty(hc_mult, dtype=torch.float32))
+         self.hc_head_scale = nn.Parameter(torch.empty(1, dtype=torch.float32))
+ 
++        # Layers whose intermediate hidden states are exposed to the drafter
++        # (EAGLE-3 / DFlash). Empty by default; set by the model runner via
++        # set_aux_hidden_state_layers().
++        self.aux_hidden_state_layers: tuple[int, ...] = ()
++
+         # Pre-hc_head residual stream buffer for the MTP draft. Stable
+         # address (outside the cudagraph pool) so the copy_ in forward()
+         # refreshes it correctly across captured shapes.
+@@ -1122,7 +1127,16 @@ class DeepseekV4Model(nn.Module):
+ 
+         if get_pp_group().is_first_rank:
+             hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
+-        for layer in islice(self.layers, self.start_layer, self.end_layer):
++        aux_hidden_states: list[torch.Tensor] = []
++        for idx, layer in enumerate(
++            islice(self.layers, self.start_layer, self.end_layer),
++            start=self.start_layer,
++        ):
++            if idx in self.aux_hidden_state_layers:
++                aux_val = hidden_states
++                if residual is not None:
++                    aux_val = aux_val + residual
++                aux_hidden_states.append(aux_val.flatten(1))
+             hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
+ 
+         # Stash pre-hc_head residual for the MTP draft (captured copy_).
+@@ -1156,6 +1170,8 @@ class DeepseekV4Model(nn.Module):
+         hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
+ 
+         hidden_states = self.norm(hidden_states)
++        if len(aux_hidden_states) > 0:
++            return hidden_states, aux_hidden_states
+         return hidden_states
+ 
+ 
+@@ -1199,7 +1215,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+             moe.experts.update_expert_map()
+ 
+ 
+-class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle):
++class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle, SupportsEagle3):
+     packed_modules_mapping = {
+         "gate_up_proj": ["gate_proj", "up_proj"],
+     }
+@@ -1288,6 +1304,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
+         forward(); valid after each target step."""
+         return getattr(self.model, "_mtp_hidden_buffer", None)
+ 
++    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
++        self.model.aux_hidden_state_layers = layers
++
++    def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
++        num_layers = len(self.model.layers)
++        return (2, num_layers // 2, num_layers - 3)
++
+     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+         rocm_aiter_moe_shared_expert_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
+         rocm_aiter_moe_shared_expert_enabled = getattr(get_ascend_config(), "mix_placement", False)
+diff --git a/vllm_ascend/patch/platform/patch_speculative_config.py b/vllm_ascend/patch/platform/patch_speculative_config.py
+index 0e7dc5e7..4a53579a 100644
+--- a/vllm_ascend/patch/platform/patch_speculative_config.py
++++ b/vllm_ascend/patch/platform/patch_speculative_config.py
+@@ -14,6 +14,8 @@ else:
+ 
+ def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
+     initial_architecture = hf_config.architectures[0]
++    if initial_architecture.startswith("DFlash"):
++        return hf_config
+     if hf_config.model_type in ("deepseek_v3", "deepseek_v32", "deepseek_v4", "glm_moe_dsa"):
+         target_model_type = hf_config.model_type
+         hf_config.model_type = "deepseek_mtp"
+diff --git a/vllm_ascend/spec_decode/dflash_proposer.py b/vllm_ascend/spec_decode/dflash_proposer.py
+index 893d6a78..645755e9 100644
+--- a/vllm_ascend/spec_decode/dflash_proposer.py
++++ b/vllm_ascend/spec_decode/dflash_proposer.py
+@@ -1,6 +1,7 @@
+ from typing import Any
+ 
+ import torch
++from typing_extensions import override
+ from vllm.config import CUDAGraphMode, VllmConfig
+ from vllm.forward_context import get_forward_context
+ from vllm.v1.attention.backends.utils import CommonAttentionMetadata
+@@ -267,3 +268,13 @@ class AscendDflashProposer(AscendEagleProposer):
+ 
+     def _raise_if_multimodal(self):
+         pass
++
++    @override
++    def _get_eagle3_use_aux_hidden_state_from_config(self) -> bool:
++        use_aux_hidden_state = True
++        dflash_config = getattr(
++            self.draft_model_config.hf_config, "dflash_config", None
++        )
++        if dflash_config is not None:
++            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
++        return use_aux_hidden_state
+diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
+index 6e438f1e..5651e702 100644
+--- a/vllm_ascend/worker/model_runner_v1.py
++++ b/vllm_ascend/worker/model_runner_v1.py
+@@ -604,6 +604,9 @@ class NPUModelRunner(GPUModelRunner):
+                 if self.speculative_config.method == "eagle3":
+                     assert isinstance(self.drafter, AscendEagleProposer)
+                     self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
++                elif self.speculative_config.method == "dflash":
++                    assert isinstance(self.drafter, AscendDflashProposer)
++                    self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
+                 elif self.speculative_config.method == "extract_hidden_states":
+                     assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
+                     self.use_aux_hidden_state_outputs = True
+@@ -1783,11 +1786,15 @@ class NPUModelRunner(GPUModelRunner):
+             # (e.g. DeepSeek V4 MTP needs the pre-hc_head residual). Safe to
+             # rebind here: hidden_states was already consumed for sampling
+             # above and is not used again in this branch.
+-            mtp_hidden_states = getattr(
+-                self.get_model(), "get_mtp_target_hidden_states", lambda: None
+-            )()
+-            if mtp_hidden_states is not None:
+-                hidden_states = mtp_hidden_states
++            # When use_aux_hidden_state_outputs is True (eagle3, dflash),
++            # target_hidden_states comes from aux_hidden_states, so the MTP
++            # override is not needed.
++            if not self.use_aux_hidden_state_outputs:
++                mtp_hidden_states = getattr(
++                    self.get_model(), "get_mtp_target_hidden_states", lambda: None
++                )()
++                if mtp_hidden_states is not None:
++                    hidden_states = mtp_hidden_states
+ 
+             num_rejected_tokens_gpu = None
+             if spec_decode_metadata is None:
