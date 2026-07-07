@@ -175,26 +175,29 @@ index 893d6a78..645755e9 100644
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
 diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
-index 07aba545..94ba33e9 100644
+index 07aba545..8c675ccc 100644
 --- a/vllm_ascend/spec_decode/llm_base_proposer.py
 +++ b/vllm_ascend/spec_decode/llm_base_proposer.py
-@@ -10,6 +10,7 @@ import torch
- import torch.nn as nn
- import torch.nn.functional as F
- from vllm.config import CompilationMode, CUDAGraphMode, VllmConfig, get_layers_from_vllm_config
-+from dataclasses import replace
- from vllm.distributed.parallel_state import (
-     get_pcp_group,
-     get_pp_group,
-@@ -279,11 +280,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -279,11 +279,28 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              AttentionLayerBase,  # type: ignore[type-abstract]
          )
          all_indexer_layer_names = set(get_layers_from_vllm_config(self.vllm_config, DeepseekV32IndexerCache).keys())
-+        # Use a draft-specific vllm_config for get_kv_cache_spec so that
-+        # target-only flags (e.g. use_mla for DeepSeek-V4) don't leak into
-+        # the draft model's KV cache spec computation.
-+        draft_vllm_config = replace(
-+            self.vllm_config, model_config=self.draft_model_config
++        # Use a lightweight wrapper to override model_config for draft
++        # layers' get_kv_cache_spec, so that target-only flags (e.g.
++        # use_mla for DeepSeek-V4) don't leak into the draft model's
++        # KV cache spec computation.
++        class _DraftVllmConfigProxy:
++            __slots__ = ("_base", "model_config")
++
++            def __init__(self, base, draft_model_config):
++                self._base = base
++                self.model_config = draft_model_config
++
++            def __getattr__(self, name):
++                return getattr(self._base, name)
++
++        draft_vllm_config = _DraftVllmConfigProxy(
++            self.vllm_config, self.draft_model_config
 +        )
          # Filter to only layers that have KV cache specs.
          self._draft_attn_layer_names = {
