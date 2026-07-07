@@ -174,6 +174,37 @@ index 893d6a78..645755e9 100644
 +        if dflash_config is not None:
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
+diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
+index 07aba545..94ba33e9 100644
+--- a/vllm_ascend/spec_decode/llm_base_proposer.py
++++ b/vllm_ascend/spec_decode/llm_base_proposer.py
+@@ -10,6 +10,7 @@ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+ from vllm.config import CompilationMode, CUDAGraphMode, VllmConfig, get_layers_from_vllm_config
++from dataclasses import replace
+ from vllm.distributed.parallel_state import (
+     get_pcp_group,
+     get_pp_group,
+@@ -279,11 +280,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             AttentionLayerBase,  # type: ignore[type-abstract]
+         )
+         all_indexer_layer_names = set(get_layers_from_vllm_config(self.vllm_config, DeepseekV32IndexerCache).keys())
++        # Use a draft-specific vllm_config for get_kv_cache_spec so that
++        # target-only flags (e.g. use_mla for DeepSeek-V4) don't leak into
++        # the draft model's KV cache spec computation.
++        draft_vllm_config = replace(
++            self.vllm_config, model_config=self.draft_model_config
++        )
+         # Filter to only layers that have KV cache specs.
+         self._draft_attn_layer_names = {
+             name
+             for name in (set(all_attn_layers.keys()) - target_attn_layer_names)
+-            if all_attn_layers[name].get_kv_cache_spec(self.vllm_config) is not None
++            if all_attn_layers[name].get_kv_cache_spec(draft_vllm_config) is not None
+         } - all_indexer_layer_names
+ 
+         self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
 index 6e438f1e..5651e702 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
