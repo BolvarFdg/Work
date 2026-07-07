@@ -175,18 +175,18 @@ index 893d6a78..645755e9 100644
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
 diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
-index 07aba545..8c675ccc 100644
+index 07aba545..cec97f18 100644
 --- a/vllm_ascend/spec_decode/llm_base_proposer.py
 +++ b/vllm_ascend/spec_decode/llm_base_proposer.py
 @@ -279,11 +279,28 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              AttentionLayerBase,  # type: ignore[type-abstract]
          )
          all_indexer_layer_names = set(get_layers_from_vllm_config(self.vllm_config, DeepseekV32IndexerCache).keys())
-+        # Use a lightweight wrapper to override model_config for draft
++        # Use a lightweight proxy to override model_config for draft
 +        # layers' get_kv_cache_spec, so that target-only flags (e.g.
 +        # use_mla for DeepSeek-V4) don't leak into the draft model's
 +        # KV cache spec computation.
-+        class _DraftVllmConfigProxy:
++        class _MlaSafeConfigProxy:
 +            __slots__ = ("_base", "model_config")
 +
 +            def __init__(self, base, draft_model_config):
@@ -196,7 +196,7 @@ index 07aba545..8c675ccc 100644
 +            def __getattr__(self, name):
 +                return getattr(self._base, name)
 +
-+        draft_vllm_config = _DraftVllmConfigProxy(
++        draft_vllm_config = _MlaSafeConfigProxy(
 +            self.vllm_config, self.draft_model_config
 +        )
          # Filter to only layers that have KV cache specs.
@@ -209,10 +209,31 @@ index 07aba545..8c675ccc 100644
  
          self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
-index 6e438f1e..5651e702 100644
+index 6e438f1e..92cb720b 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
 +++ b/vllm_ascend/worker/model_runner_v1.py
-@@ -604,6 +604,9 @@ class NPUModelRunner(GPUModelRunner):
+@@ -249,6 +249,20 @@ class ExecuteModelState(NamedTuple):
+     batch_desc: BatchDescriptor
+ 
+ 
++class _MlaSafeConfigProxy:
++    """Lightweight proxy that overrides model_config (use_mla=False for
++    draft models) while delegating all other attributes to the base config."""
++
++    __slots__ = ("_base", "model_config")
++
++    def __init__(self, base, draft_model_config):
++        self._base = base
++        self.model_config = draft_model_config
++
++    def __getattr__(self, name):
++        return getattr(self._base, name)
++
++
+ class NPUModelRunner(GPUModelRunner):
+     def __init__(self, vllm_config: VllmConfig, device: torch.device):
+         # TODO(qcs): These manual pad and unpad for GPUModelRunner are
+@@ -604,6 +618,9 @@ class NPUModelRunner(GPUModelRunner):
                  if self.speculative_config.method == "eagle3":
                      assert isinstance(self.drafter, AscendEagleProposer)
                      self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
@@ -222,7 +243,7 @@ index 6e438f1e..5651e702 100644
                  elif self.speculative_config.method == "extract_hidden_states":
                      assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
                      self.use_aux_hidden_state_outputs = True
-@@ -1783,11 +1786,15 @@ class NPUModelRunner(GPUModelRunner):
+@@ -1783,11 +1800,15 @@ class NPUModelRunner(GPUModelRunner):
              # (e.g. DeepSeek V4 MTP needs the pre-hc_head residual). Safe to
              # rebind here: hidden_states was already consumed for sampling
              # above and is not used again in this branch.
@@ -243,3 +264,41 @@ index 6e438f1e..5651e702 100644
  
              num_rejected_tokens_gpu = None
              if spec_decode_metadata is None:
+@@ -4686,10 +4707,35 @@ class NPUModelRunner(GPUModelRunner):
+                 continue
+             elif self.use_compress:
+                 # Skip modules that don't need KV cache (eg encoder-only attention)
+-                if spec := attn_module.get_kv_cache_spec(self.vllm_config):
++                # For draft Attention layers with sliding_window (e.g. DFlash),
++                # use a config where use_mla=False to avoid the MLA assertion.
++                cfg = self.vllm_config
++                draft_mc = (
++                    self.vllm_config.speculative_config.draft_model_config
++                    if self.vllm_config.speculative_config
++                    else None
++                )
++                if (
++                    isinstance(attn_module, Attention)
++                    and attn_module.sliding_window is not None
++                    and draft_mc is not None
++                ):
++                    cfg = _MlaSafeConfigProxy(self.vllm_config, draft_mc)
++                if spec := attn_module.get_kv_cache_spec(cfg):
+                     kv_cache_spec[layer_name] = spec
+             elif isinstance(attn_module, Attention):
+-                if spec := attn_module.get_kv_cache_spec(self.vllm_config):
++                cfg = self.vllm_config
++                draft_mc = (
++                    self.vllm_config.speculative_config.draft_model_config
++                    if self.vllm_config.speculative_config
++                    else None
++                )
++                if (
++                    attn_module.sliding_window is not None
++                    and draft_mc is not None
++                ):
++                    cfg = _MlaSafeConfigProxy(self.vllm_config, draft_mc)
++                if spec := attn_module.get_kv_cache_spec(cfg):
+                     kv_cache_spec[layer_name] = spec
+                     attn_layer_names.add(layer_name)
+ 
