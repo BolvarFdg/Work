@@ -73,6 +73,112 @@ index f516c35e..356a92c7 100644
      def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
          rocm_aiter_moe_shared_expert_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
          rocm_aiter_moe_shared_expert_enabled = getattr(get_ascend_config(), "mix_placement", False)
+diff --git a/vllm_ascend/patch/platform/patch_kv_cache_utils.py b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
+index 510af152..4992d6f8 100644
+--- a/vllm_ascend/patch/platform/patch_kv_cache_utils.py
++++ b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
+@@ -70,11 +70,14 @@ def group_and_unify_kv_cache_specs(
+ 
+     ratio_specs: dict[int, dict[str, KVCacheSpec]] = defaultdict(dict)
+     grouped_swa_mla_specs: dict[int, dict[str, KVCacheSpec]] = defaultdict(dict)
++    other_specs: dict[str, KVCacheSpec] = {}
+     for name, spec in kv_cache_spec.items():
+         if isinstance(spec, SlidingWindowMLASpec):
+             grouped_swa_mla_specs[spec.block_size][name] = spec
+         elif isinstance(spec, MLAAttentionSpec):
+             ratio_specs[spec.compress_ratio][name] = spec
++        else:
++            other_specs[name] = spec
+ 
+     mla_uniform_specs = []
+     for ratio in sorted(ratio_specs, key=lambda r: (r != 4, r)):
+@@ -89,7 +92,11 @@ def group_and_unify_kv_cache_specs(
+         assert uniform_spec is not None
+         swa_uniform_specs.append(uniform_spec)
+ 
+-    return [*mla_uniform_specs, *swa_uniform_specs]
++    other_uniform_specs: list[UniformTypeKVCacheSpecs] = []
++    if other_specs:
++        other_uniform_specs.append(UniformTypeKVCacheSpecs.from_specs(other_specs))
++
++    return [*mla_uniform_specs, *swa_uniform_specs, *other_uniform_specs]
+ 
+ 
+ def _get_kv_cache_groups_uniform_groups(
+@@ -128,11 +135,13 @@ def _get_kv_cache_groups_uniform_groups(
+     num_layer_tuples_per_group = [round_up(x, num_layer_tuples) for x in num_layer_tuples_per_group]
+ 
+     # TODO(cmq): this is not general enough
+-    swa_mla_specs = grouped_specs[2:]
+-
+-    assert all(
+-        isinstance(spec, SlidingWindowMLASpec) for group in swa_mla_specs for spec in group.kv_cache_specs.values()
+-    )
++    swa_mla_specs = []
++    other_specs = []
++    for g in grouped_specs[2:]:
++        if all(isinstance(spec, SlidingWindowMLASpec) for spec in g.kv_cache_specs.values()):
++            swa_mla_specs.append(g)
++        else:
++            other_specs.append(g)
+ 
+     # Split each SWA UniformKV group into smaller groups to align their #(layer tuples)
+     # Possibly padding layer tuples for this.
+@@ -181,7 +190,17 @@ def _get_kv_cache_groups_uniform_groups(
+                 )
+             )
+ 
+-    return [full_mla_group, full_mla_c128_group, *swa_mla_groups]
++    # Create simple groups for non-SWA, non-MLA specs (e.g. DFlash draft layers)
++    other_groups = []
++    for o_spec in other_specs:
++        other_groups.append(
++            KVCacheGroupSpec(
++                layer_names=list(o_spec.kv_cache_specs.keys()),
++                kv_cache_spec=o_spec,
++            )
++        )
++
++    return [full_mla_group, full_mla_c128_group, *swa_mla_groups, *other_groups]
+ 
+ 
+ def _get_kv_cache_config_deepseek_v4(
+@@ -210,17 +229,23 @@ def _get_kv_cache_config_deepseek_v4(
+     # bucket). bucketed[g_idx][page_size] = [layer_name, ...].
+     mtp_layer_names = []
+     mtp_page_size = 0
++    other_layer_names = []
++    other_page_sizes: dict[str, int] = {}
+     bucketed: list[dict[int, list[str]]] = []
+     for group in kv_cache_groups:
+         assert isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs)
+         specs = group.kv_cache_spec.kv_cache_specs
+         b: dict[int, list[str]] = defaultdict(list)
+         for name in group.layer_names:
+-            if "mtp" not in name:
+-                b[specs[name].page_size_bytes].append(name)
+-            else:
++            if "mtp" in name:
+                 mtp_layer_names.append(name)
+                 mtp_page_size = specs[name].page_size_bytes
++            elif isinstance(specs[name], (SlidingWindowMLASpec, MLAAttentionSpec)):
++                b[specs[name].page_size_bytes].append(name)
++            else:
++                # Draft model layers (e.g. DFlash standard Attention)
++                other_layer_names.append(name)
++                other_page_sizes[name] = specs[name].page_size_bytes
+         bucketed.append(b)
+ 
+     # num_layer_tuples = longest bucket list across all groups. For the
+@@ -243,6 +268,8 @@ def _get_kv_cache_config_deepseek_v4(
+             kv_cache_tensors.append(KVCacheTensor(size=ps * num_blocks, shared_by=shared_by))
+     for i in range(len(mtp_layer_names)):
+         kv_cache_tensors.append(KVCacheTensor(size=mtp_page_size * num_blocks, shared_by=[mtp_layer_names[i]]))
++    for name in other_layer_names:
++        kv_cache_tensors.append(KVCacheTensor(size=other_page_sizes[name] * num_blocks, shared_by=[name]))
+ 
+     return num_blocks, kv_cache_tensors
+ 
 diff --git a/vllm_ascend/patch/platform/patch_speculative_config.py b/vllm_ascend/patch/platform/patch_speculative_config.py
 index 0e7dc5e7..4a53579a 100644
 --- a/vllm_ascend/patch/platform/patch_speculative_config.py
