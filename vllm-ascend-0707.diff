@@ -86,6 +86,68 @@ index 0e7dc5e7..4a53579a 100644
      if hf_config.model_type in ("deepseek_v3", "deepseek_v32", "deepseek_v4", "glm_moe_dsa"):
          target_model_type = hf_config.model_type
          hf_config.model_type = "deepseek_mtp"
+diff --git a/vllm_ascend/patch/worker/patch_qwen3_dflash.py b/vllm_ascend/patch/worker/patch_qwen3_dflash.py
+index 80dd31c7..f9478708 100644
+--- a/vllm_ascend/patch/worker/patch_qwen3_dflash.py
++++ b/vllm_ascend/patch/worker/patch_qwen3_dflash.py
+@@ -2,7 +2,6 @@ import torch
+ import torch.nn.functional as F
+ from vllm.model_executor.models.qwen3_dflash import DFlashQwen3Model
+ 
+-
+ def precompute_and_store_context_kv(
+     self,
+     context_states: torch.Tensor,
+@@ -60,3 +59,49 @@ def precompute_and_store_context_kv(
+ 
+ 
+ DFlashQwen3Model.precompute_and_store_context_kv = precompute_and_store_context_kv
++
++
++# ---------------------------------------------------------------------------
++# Patch: adjust target_hidden_size for DeepSeek-V4 target (hc_mult > 1)
++#
++# DeepSeek-V4's intermediate hidden states are 3-D (num_tokens, hc_mult,
++# hidden_size).  When collected as aux hidden states for DFlash they are
++# flattened to (num_tokens, hc_mult * hidden_size).  The draft model's
++# config typically sets target_hidden_size = hidden_size (without hc_mult),
++# which makes the fc layer too small by a factor of hc_mult.  This patch
++# corrects target_hidden_size before DFlashQwen3Model.__init__ creates fc.
++# ---------------------------------------------------------------------------
++
++_original_dflash_init = DFlashQwen3Model.__init__
++
++
++def _patched_dflash_init(
++    self,
++    *,
++    vllm_config,
++    start_layer_id: int = 0,
++    prefix: str = "",
++) -> None:
++    target_config = vllm_config.model_config.hf_config
++    target_hc_mult = getattr(target_config, "hc_mult", 1)
++
++    if target_hc_mult > 1:
++        draft_hf_config = vllm_config.speculative_config.draft_model_config.hf_config
++        current_ts = getattr(draft_hf_config, "target_hidden_size", None)
++        target_hs = getattr(target_config, "hidden_size", None)
++
++        if current_ts is None:
++            if target_hs is not None:
++                draft_hf_config.target_hidden_size = target_hs * target_hc_mult
++        elif target_hs is not None and current_ts == target_hs:
++            draft_hf_config.target_hidden_size = current_ts * target_hc_mult
++
++    _original_dflash_init(
++        self,
++        vllm_config=vllm_config,
++        start_layer_id=start_layer_id,
++        prefix=prefix,
++    )
++
++
++DFlashQwen3Model.__init__ = _patched_dflash_init
 diff --git a/vllm_ascend/spec_decode/dflash_proposer.py b/vllm_ascend/spec_decode/dflash_proposer.py
 index 893d6a78..645755e9 100644
 --- a/vllm_ascend/spec_decode/dflash_proposer.py
