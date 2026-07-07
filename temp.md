@@ -56,3 +56,6 @@ all_k_flat, _ = rope_forward_oot(
 ```
 
 `rope_forward_oot` 直接调用 `torch_npu._npu_rotary_embedding`（`rotary_embedding.py:189-212`），是NPU原生in-place算子，不经过CustomOp dispatch。
+
+
+xcode-select: note: Command line tools are already installed. Use "Software Update" in System Settings or the softwareupdate command line interface to install updates
