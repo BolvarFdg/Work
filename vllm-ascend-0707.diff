@@ -1,5 +1,5 @@
 diff --git a/vllm_ascend/models/deepseek_v4.py b/vllm_ascend/models/deepseek_v4.py
-index f516c35e..e3be1e93 100644
+index f516c35e..93050fac 100644
 --- a/vllm_ascend/models/deepseek_v4.py
 +++ b/vllm_ascend/models/deepseek_v4.py
 @@ -56,7 +56,7 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
@@ -20,7 +20,28 @@ index f516c35e..e3be1e93 100644
      fall_back_to_pt_during_load = False
  
      def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
-@@ -1122,7 +1122,12 @@ class DeepseekV4Model(nn.Module):
+@@ -1081,6 +1081,20 @@ class DeepseekV4Model(nn.Module):
+     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+         return self.embed_tokens(input_ids)
+ 
++    def _maybe_add_hidden_state(
++        self,
++        aux_hidden_states: list[torch.Tensor],
++        layer_idx: int,
++        hidden_states: torch.Tensor,
++        residual: torch.Tensor,
++    ) -> list[torch.Tensor]:
++        if layer_idx in self.aux_hidden_state_layers:
++            # DeepSeek-V4's hc_post already merges the residual stream into
++            # hidden_states, so we must NOT add residual again (unlike
++            # DeepSeek-V2 where hidden_states is the raw MLP output).
++            aux_hidden_states.append(hidden_states)
++        return aux_hidden_states
++
+     def hc_head(self, x: torch.Tensor, hc_fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor):
+         shape, dtype = x.size(), x.dtype
+         x = x.flatten(1).float()
+@@ -1122,7 +1136,12 @@ class DeepseekV4Model(nn.Module):
  
          if get_pp_group().is_first_rank:
              hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
@@ -34,7 +55,7 @@ index f516c35e..e3be1e93 100644
              hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
  
          # Stash pre-hc_head residual for the MTP draft (captured copy_).
-@@ -1156,6 +1161,8 @@ class DeepseekV4Model(nn.Module):
+@@ -1156,6 +1175,8 @@ class DeepseekV4Model(nn.Module):
          hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
  
          hidden_states = self.norm(hidden_states)
@@ -43,7 +64,7 @@ index f516c35e..e3be1e93 100644
          return hidden_states
  
  
-@@ -1199,7 +1206,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+@@ -1199,7 +1220,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
              moe.experts.update_expert_map()
  
  
@@ -52,7 +73,7 @@ index f516c35e..e3be1e93 100644
      packed_modules_mapping = {
          "gate_up_proj": ["gate_proj", "up_proj"],
      }
-@@ -1288,6 +1295,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
+@@ -1288,6 +1309,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
          forward(); valid after each target step."""
          return getattr(self.model, "_mtp_hidden_buffer", None)
  
@@ -362,7 +383,7 @@ index 893d6a78..ce4bb607 100644
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
 diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
-index 07aba545..7532cbc6 100644
+index 07aba545..68cabf87 100644
 --- a/vllm_ascend/spec_decode/llm_base_proposer.py
 +++ b/vllm_ascend/spec_decode/llm_base_proposer.py
 @@ -31,7 +31,7 @@ from vllm.utils.math_utils import cdiv
@@ -404,7 +425,28 @@ index 07aba545..7532cbc6 100644
          } - all_indexer_layer_names
  
          self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
-@@ -817,12 +834,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -674,7 +691,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             assert isinstance(
+                 self.get_model(), (Eagle3LlamaForCausalLM, DFlashQwen3ForCausalLM, Eagle3DeepseekV2ForCausalLM)
+             )
++            logger.info(
++                "[DFlash diagnose] BEFORE combine: target_hidden_states shape=%s, mean=%s, has_nan=%s",
++                tuple(target_hidden_states.shape),
++                target_hidden_states.float().mean().item() if target_hidden_states.numel() > 0 else "empty",
++                torch.isnan(target_hidden_states).any().item() if target_hidden_states.numel() > 0 else False,
++            )
+             target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
++            logger.info(
++                "[DFlash diagnose] AFTER combine: target_hidden_states shape=%s, mean=%s, std=%s, has_nan=%s",
++                tuple(target_hidden_states.shape),
++                target_hidden_states.float().mean().item() if target_hidden_states.numel() > 0 else "empty",
++                target_hidden_states.float().std().item() if target_hidden_states.numel() > 0 else 0.0,
++                torch.isnan(target_hidden_states).any().item() if target_hidden_states.numel() > 0 else False,
++            )
+             assert target_hidden_states.shape[-1] == self.hidden_size
+ 
+         num_tokens, token_indices_to_sample, common_attn_metadata, long_seq_args = self.set_inputs_first_pass(
+@@ -817,12 +847,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          builder = self.draft_attn_groups[0].get_metadata_builder()
          extra_attn_metadata_args: dict = {}
          if self.use_compress:
@@ -428,7 +470,7 @@ index 07aba545..7532cbc6 100644
          attn_metadata = builder.build(0, common_attn_metadata, self.runner.get_model(), **extra_attn_metadata_args)
  
          if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
-@@ -1015,11 +1037,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -1015,11 +1050,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              if self.pass_hidden_states_to_model:
                  model_hidden_states = self.hidden_states[:num_input_tokens]
                  model_hidden_states, model_positions = self.maybe_pad_and_reduce(model_hidden_states, model_positions)
@@ -442,6 +484,27 @@ index 07aba545..7532cbc6 100644
          if not self.model_returns_tuple():
              last_hidden_states = ret_hidden_states
              hidden_states = last_hidden_states
+@@ -1092,6 +1126,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+                     token_indices_to_sample = token_indices_to_sample[:num_indices]
+                 draft_token_ids = logits.argmax(dim=-1)
+ 
++        logger.info(
++            "[DFlash diagnose] sample_hidden_states shape=%s, mean=%s, std=%s, has_nan=%s, has_inf=%s",
++            tuple(sample_hidden_states.shape),
++            sample_hidden_states.float().mean().item(),
++            sample_hidden_states.float().std().item(),
++            torch.isnan(sample_hidden_states).any().item(),
++            torch.isinf(sample_hidden_states).any().item(),
++        )
++        logger.info(
++            "[DFlash diagnose] draft_token_ids=%s, shape=%s",
++            draft_token_ids.tolist()[:20],
++            tuple(draft_token_ids.shape),
++        )
++
+         # Early exit if there is only one draft token to be generated.
+         if self.num_speculative_tokens == 1 or self.parallel_drafting:
+             # [batch_size, 1]
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
 index 6e438f1e..4957d2ad 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
