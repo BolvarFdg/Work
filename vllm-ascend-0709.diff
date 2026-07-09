@@ -285,47 +285,18 @@ index 80dd31c7..a431f95c 100644
 +
 +DFlashQwen3Model.__init__ = _patched_dflash_init
 diff --git a/vllm_ascend/spec_decode/dflash_proposer.py b/vllm_ascend/spec_decode/dflash_proposer.py
-index 893d6a78..e3e1778c 100644
+index 893d6a78..72947273 100644
 --- a/vllm_ascend/spec_decode/dflash_proposer.py
 +++ b/vllm_ascend/spec_decode/dflash_proposer.py
-@@ -1,8 +1,10 @@
+@@ -1,6 +1,7 @@
  from typing import Any
  
  import torch
 +from typing_extensions import override
  from vllm.config import CUDAGraphMode, VllmConfig
  from vllm.forward_context import get_forward_context
-+from vllm.logger import init_logger
  from vllm.v1.attention.backends.utils import CommonAttentionMetadata
- 
- from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
-@@ -11,6 +13,8 @@ from vllm_ascend.attention.utils import AscendCommonAttentionMetadata
- from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_inputs_kernel_single_grid
- from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
- 
-+logger = init_logger(__name__)
-+
- 
- class AscendDflashProposer(AscendEagleProposer):
-     def __init__(
-@@ -161,13 +165,16 @@ class AscendDflashProposer(AscendEagleProposer):
-         is_profile=False,
-         **kwargs,
-     ) -> None:
-+        logger.info("[DFlash dummy_run] ENTER, is_profile=%s, num_tokens=%s, num_reqs=%s", is_profile, num_tokens, num_reqs)
-         num_query_tokens = min(num_tokens, self.max_query_tokens)
- 
-+        logger.info("[DFlash dummy_run] before _sync_metadata_across_dp")
-         (
-             num_input_tokens,
-             num_tokens_across_dp,
-             _,
-         ) = self.runner._sync_metadata_across_dp(num_query_tokens, is_draft_model=True)
-+        logger.info("[DFlash dummy_run] after _sync_metadata_across_dp, num_input_tokens=%s", num_input_tokens)
- 
-         if not self.use_cuda_graph:
-             aclgraph_runtime_mode = CUDAGraphMode.NONE
-@@ -227,14 +234,16 @@ class AscendDflashProposer(AscendEagleProposer):
+@@ -227,11 +228,12 @@ class AscendDflashProposer(AscendEagleProposer):
          ):
              if is_profile:
                  self.model.precompute_and_store_context_kv(context_states, context_positions)
@@ -343,35 +314,7 @@ index 893d6a78..e3e1778c 100644
  
              else:
                  self._dflash_num_context = num_input_tokens
-+                logger.info("[DFlash dummy_run] before _runnable, num_input_tokens=%s, num_reqs=%s", num_input_tokens, num_reqs)
-                 self._runnable(
-                     num_input_tokens=num_input_tokens,
-                     batch_size=num_reqs,
-@@ -244,6 +253,7 @@ class AscendDflashProposer(AscendEagleProposer):
-                     multi_steps_attn_metadata=multi_steps_attn_metadata,
-                     num_tokens=num_input_tokens,
-                 )
-+                logger.info("[DFlash dummy_run] after _runnable")
- 
-             forward_context = get_forward_context()
-             if forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL and not _EXTRA_CTX.capturing:
-@@ -255,6 +265,15 @@ class AscendDflashProposer(AscendEagleProposer):
-     ) -> dict[str, Any]:
-         num_context = self._dflash_num_context
- 
-+        logger.info(
-+            "[DFlash build_model_inputs] num_context=%s, "
-+            "context_slot_mapping[:5]=%s, all_zero=%s, "
-+            "context_positions[:5]=%s",
-+            num_context,
-+            self._context_slot_mapping_buffer[:5].tolist(),
-+            (self._context_slot_mapping_buffer[:num_context] == 0).all().item(),
-+            self._context_positions_buffer[:5].tolist(),
-+        )
-         self.model.precompute_and_store_context_kv(
-             self._dflash_hidden_states[:num_context],
-             self._context_positions_buffer[:num_context],
-@@ -267,3 +286,13 @@ class AscendDflashProposer(AscendEagleProposer):
+@@ -267,3 +269,13 @@ class AscendDflashProposer(AscendEagleProposer):
  
      def _raise_if_multimodal(self):
          pass
@@ -386,7 +329,7 @@ index 893d6a78..e3e1778c 100644
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
 diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
-index 07aba545..68cabf87 100644
+index 07aba545..483b1e72 100644
 --- a/vllm_ascend/spec_decode/llm_base_proposer.py
 +++ b/vllm_ascend/spec_decode/llm_base_proposer.py
 @@ -31,7 +31,7 @@ from vllm.utils.math_utils import cdiv
@@ -428,28 +371,65 @@ index 07aba545..68cabf87 100644
          } - all_indexer_layer_names
  
          self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
-@@ -674,7 +691,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -339,6 +356,25 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             self.kernel_block_size,
+         )
+ 
++        if self.method == "dflash":
++            _fc = getattr(self.model.model, "fc", None)
++            _d2t = getattr(self.model, "draft_id_to_target_id", None)
++            _draft_hs = getattr(self.draft_model_config.hf_config, "hidden_size", "?")
++            _target_hs = getattr(self.draft_model_config.hf_config, "target_hidden_size", "?")
++            _num_layers = getattr(self.draft_model_config.hf_config, "num_hidden_layers", "?")
++            logger.warning(
++                "[DBG][init] dflash: hidden_size=%s target_hidden_size=%s draft_num_layers=%s "
++                "fc_weight_shape=%s fc_bias=%s d2t=%s d2t_shape=%s "
++                "use_aux=%s eagle3_use_aux=%s",
++                _draft_hs, _target_hs, _num_layers,
++                list(_fc.weight.shape) if _fc is not None else None,
++                _fc.bias is not None if _fc is not None else None,
++                _d2t is not None,
++                list(_d2t.shape) if _d2t is not None else None,
++                getattr(self.model.model, "use_aux_hidden_state", "?"),
++                self.eagle3_use_aux_hidden_state,
++            )
++
+     def _maybe_share_embeddings(self, target_language_model: nn.Module) -> None:
+         """
+         Some draft models may not have their own embedding layers, and some may
+@@ -674,8 +710,31 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              assert isinstance(
                  self.get_model(), (Eagle3LlamaForCausalLM, DFlashQwen3ForCausalLM, Eagle3DeepseekV2ForCausalLM)
              )
-+            logger.info(
-+                "[DFlash diagnose] BEFORE combine: target_hidden_states shape=%s, mean=%s, has_nan=%s",
-+                tuple(target_hidden_states.shape),
-+                target_hidden_states.float().mean().item() if target_hidden_states.numel() > 0 else "empty",
-+                torch.isnan(target_hidden_states).any().item() if target_hidden_states.numel() > 0 else False,
-+            )
++            if not hasattr(self, "_dbg_cnt"):
++                self._dbg_cnt = 0
++            if self._dbg_cnt < 5:
++                self._dbg_cnt += 1
++                _fc_in = target_hidden_states
++                logger.warning(
++                    "[DBG][fc] input shape=%s dtype=%s absmax=%.4f mean=%.6f std=%.6f",
++                    list(_fc_in.shape), _fc_in.dtype,
++                    _fc_in.abs().max().item(),
++                    _fc_in.float().mean().item(),
++                    _fc_in.float().std().item(),
++                )
              target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
-+            logger.info(
-+                "[DFlash diagnose] AFTER combine: target_hidden_states shape=%s, mean=%s, std=%s, has_nan=%s",
-+                tuple(target_hidden_states.shape),
-+                target_hidden_states.float().mean().item() if target_hidden_states.numel() > 0 else "empty",
-+                target_hidden_states.float().std().item() if target_hidden_states.numel() > 0 else 0.0,
-+                torch.isnan(target_hidden_states).any().item() if target_hidden_states.numel() > 0 else False,
-+            )
              assert target_hidden_states.shape[-1] == self.hidden_size
++            if self._dbg_cnt <= 5:
++                _fc_out = target_hidden_states
++                logger.warning(
++                    "[DBG][fc] output shape=%s absmax=%.4f mean=%.6f std=%.6f has_nan=%s has_inf=%s",
++                    list(_fc_out.shape),
++                    _fc_out.abs().max().item(),
++                    _fc_out.float().mean().item(),
++                    _fc_out.float().std().item(),
++                    torch.isnan(_fc_out).any().item(),
++                    torch.isinf(_fc_out).any().item(),
++                )
  
          num_tokens, token_indices_to_sample, common_attn_metadata, long_seq_args = self.set_inputs_first_pass(
-@@ -817,12 +847,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             target_token_ids=target_token_ids,
+@@ -817,12 +876,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          builder = self.draft_attn_groups[0].get_metadata_builder()
          extra_attn_metadata_args: dict = {}
          if self.use_compress:
@@ -473,43 +453,66 @@ index 07aba545..68cabf87 100644
          attn_metadata = builder.build(0, common_attn_metadata, self.runner.get_model(), **extra_attn_metadata_args)
  
          if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
-@@ -1015,11 +1050,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
-             if self.pass_hidden_states_to_model:
-                 model_hidden_states = self.hidden_states[:num_input_tokens]
-                 model_hidden_states, model_positions = self.maybe_pad_and_reduce(model_hidden_states, model_positions)
--                model_kwargs["hidden_states"] = model_hidden_states
--                if self.method == "mtp":
--                    model_kwargs["positions"] = model_positions
+@@ -978,12 +1042,39 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+     def compute_draft_token_ids(self, hidden_states: torch.Tensor):
+         logits = self.model.logits_processor(self.model.lm_head, hidden_states)
+         if not hasattr(self.model, "draft_id_to_target_id") or self.model.draft_id_to_target_id is None:
++            if not hasattr(self, "_dbg_tok_cnt"):
++                self._dbg_tok_cnt = 0
++            if self._dbg_tok_cnt < 5:
++                self._dbg_tok_cnt += 1
++                logger.warning(
++                    "[DBG][token] no d2t, greedy_sample direct. logits absmax=%.4f argmax_sample=%s",
++                    logits.abs().max().item(),
++                    logits.argmax(dim=-1)[:8].tolist(),
++                )
+             return greedy_sample(logits)
++        if not hasattr(self, "_dbg_tok_cnt"):
++            self._dbg_tok_cnt = 0
++        if self._dbg_tok_cnt < 5:
++            self._dbg_tok_cnt += 1
++            d2t = self.model.draft_id_to_target_id
++            logger.warning(
++                "[DBG][token] d2t shape=%s sum=%s unique=%s min=%s max=%s",
++                list(d2t.shape), d2t.sum().item(),
++                d2t.unique().numel(), d2t.min().item(), d2t.max().item(),
++            )
+         logits = logits.contiguous()
+         next_token = greedy_sample(logits)
+         bias = torch.index_select(self.model.draft_id_to_target_id, dim=0, index=next_token.view(-1)).view(
+             next_token.shape
+         )
++        if self._dbg_tok_cnt <= 5:
++            logger.warning(
++                "[DBG][token] draft_raw=%s bias=%s final=%s logits_absmax=%.4f",
++                next_token[:8].tolist(),
++                bias[:8].tolist(),
++                (next_token + bias)[:8].tolist(),
++                logits.abs().max().item(),
++            )
+         return next_token + bias
  
-+        logger.info("[_run_merged_draft] before model forward, method=%s", self.method)
-         ret_hidden_states = self.model(**model_kwargs)
-+        logger.info("[_run_merged_draft] after model forward")
-         if not self.model_returns_tuple():
-             last_hidden_states = ret_hidden_states
-             hidden_states = last_hidden_states
-@@ -1092,6 +1126,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
-                     token_indices_to_sample = token_indices_to_sample[:num_indices]
-                 draft_token_ids = logits.argmax(dim=-1)
- 
-+        logger.info(
-+            "[DFlash diagnose] sample_hidden_states shape=%s, mean=%s, std=%s, has_nan=%s, has_inf=%s",
-+            tuple(sample_hidden_states.shape),
-+            sample_hidden_states.float().mean().item(),
-+            sample_hidden_states.float().std().item(),
-+            torch.isnan(sample_hidden_states).any().item(),
-+            torch.isinf(sample_hidden_states).any().item(),
-+        )
-+        logger.info(
-+            "[DFlash diagnose] draft_token_ids=%s, shape=%s",
-+            draft_token_ids.tolist()[:20],
-+            tuple(draft_token_ids.shape),
-+        )
-+
+     def _run_merged_draft(
+@@ -1095,7 +1186,16 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          # Early exit if there is only one draft token to be generated.
          if self.num_speculative_tokens == 1 or self.parallel_drafting:
              # [batch_size, 1]
+-            return draft_token_ids.view(-1, self.num_speculative_tokens)
++            _ret = draft_token_ids.view(-1, self.num_speculative_tokens)
++            if not hasattr(self, "_dbg_ret_cnt"):
++                self._dbg_ret_cnt = 0
++            if self._dbg_ret_cnt < 5:
++                self._dbg_ret_cnt += 1
++                logger.warning(
++                    "[DBG][return] draft_tokens shape=%s sample=%s",
++                    list(_ret.shape), _ret[0].tolist() if _ret.shape[0] > 0 else [],
++                )
++            return _ret
+ 
+         if self.pcp_size * self.dcp_size > 1 and is_prefill:
+             draft_token_ids_list = []
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
-index 6e438f1e..4957d2ad 100644
+index 6e438f1e..eeb51550 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
 +++ b/vllm_ascend/worker/model_runner_v1.py
 @@ -249,6 +249,20 @@ class ExecuteModelState(NamedTuple):
@@ -586,7 +589,7 @@ index 6e438f1e..4957d2ad 100644
                      else:
                          target_hidden_states = hidden_states[:num_scheduled_tokens]
              else:
-@@ -1835,12 +1861,17 @@ class NPUModelRunner(GPUModelRunner):
+@@ -1835,15 +1861,37 @@ class NPUModelRunner(GPUModelRunner):
                      target_positions = positions
                      target_hidden_states = hidden_states
                      if self.use_aux_hidden_state_outputs:
@@ -606,81 +609,29 @@ index 6e438f1e..4957d2ad 100644
                      else:
                          target_hidden_states = hidden_states[token_indices]
              assert self.drafter is not None
-@@ -3508,9 +3539,11 @@ class NPUModelRunner(GPUModelRunner):
-                 has_sinks = self._has_sinks,
-                 input_ids=input_ids,
-             ):
-+                logger.info("[_dummy_run] before target model forward, is_profile=%s, use_aux=%s", is_profile, self.use_aux_hidden_state_outputs)
-                 outputs = self._model_forward(
-                     num_tokens_padded, input_ids, positions, intermediate_tensors, inputs_embeds
-                 )
-+                logger.info("[_dummy_run] after target model forward")
-             if self.use_aux_hidden_state_outputs:
-                 hidden_states, _ = outputs
-             else:
-@@ -3518,6 +3551,7 @@ class NPUModelRunner(GPUModelRunner):
-             dummy_compute_logits(hidden_states)
- 
-             if self.drafter:
-+                logger.info("[_dummy_run] before drafter dummy_run")
-                 self.drafter.dummy_run(
-                     num_tokens=num_tokens_padded,
-                     with_prefill=with_prefill,
-@@ -3682,7 +3716,9 @@ class NPUModelRunner(GPUModelRunner):
-         self.may_add_encoder_only_layers_to_kv_cache_config()
-         self.maybe_add_kv_sharing_layers_to_kv_cache_groups(kv_cache_config)
-         # NOTE(cmq): initialize_attn_backend must before using self.attn_groups
-+        logger.info("[initialize_kv_cache] before initialize_attn_backend")
-         self.initialize_attn_backend(kv_cache_config, is_profiling=is_profiling)
-+        logger.info("[initialize_kv_cache] after initialize_attn_backend")
-         self.use_hybrid_blocks = len(self.attn_groups) > 1
-         # NOTE: Currently, we determine whether we need `num_accepted_tokens` through `MambaSpec`.
-         self.need_accepted_tokens = any(
-@@ -3690,7 +3726,9 @@ class NPUModelRunner(GPUModelRunner):
-         )
- 
-         self.may_reinitialize_input_batch(kv_cache_config)
-+        logger.info("[initialize_kv_cache] before initialize_kv_cache_tensors")
-         kv_caches = self.initialize_kv_cache_tensors(kv_cache_config)
-+        logger.info("[initialize_kv_cache] after initialize_kv_cache_tensors")
-         # TODO: refactor the logic of attention
-         if (
-             self.speculative_config
-@@ -3706,7 +3744,9 @@ class NPUModelRunner(GPUModelRunner):
-             )
-             block_size = (self.kernel_block_sizes[0] if isinstance(
-                 self.kernel_block_sizes, list) else self.kernel_block_sizes)
-+            logger.info("[initialize_kv_cache] before drafter.initialize_attn_backend")
-             self.drafter.initialize_attn_backend(kv_cache_config, block_size)
-+            logger.info("[initialize_kv_cache] after drafter.initialize_attn_backend")
- 
-         if has_kv_transfer_group() and not is_profiling:
-             get_kv_transfer_group().register_kv_caches(kv_caches)
-@@ -3743,9 +3783,13 @@ class NPUModelRunner(GPUModelRunner):
-             corresponding memory buffer for KV cache.
-         """
-         # Initialize the memory buffer for KV cache
-+        logger.info("[init_kv_cache_tensors] before _allocate_kv_cache_tensors")
-         kv_cache_raw_tensors = self._allocate_kv_cache_tensors(kv_cache_config)
-+        logger.info("[init_kv_cache_tensors] after _allocate_kv_cache_tensors")
-         # Change the memory buffer to the desired shape
-+        logger.info("[init_kv_cache_tensors] before _reshape_kv_cache_tensors")
-         kv_caches = self._reshape_kv_cache_tensors(kv_cache_config, kv_cache_raw_tensors)
-+        logger.info("[init_kv_cache_tensors] after _reshape_kv_cache_tensors, num_layers=%s", len(kv_caches))
- 
-         # Set up cross-layer KV cache sharing
-         for layer_name, target_layer_name in self.shared_kv_cache_layers.items():
-@@ -3756,14 +3800,21 @@ class NPUModelRunner(GPUModelRunner):
-             from vllm_ascend.utils import extract_dsv4_layer_index
- 
-             assert len(self.kv_caches) == 0
-+            logger.info("[init_kv_cache_tensors] before dsv4 bind, kv_caches keys sample=%s", list(kv_caches.keys())[:5])
-             for layer_name in sorted(
-                     kv_caches,
-                     key=lambda name: (extract_dsv4_layer_index(
++            if self.use_aux_hidden_state_outputs and aux_hidden_states is not None:
++                if not hasattr(self, "_dbg_aux_cnt"):
++                    self._dbg_aux_cnt = 0
++                if self._dbg_aux_cnt < 3:
++                    self._dbg_aux_cnt += 1
++                    for i, h in enumerate(aux_hidden_states):
++                        logger.warning(
++                            "[DBG][aux] layer_feat[%d] shape=%s dtype=%s dim=%d absmax=%.4f mean=%.6f",
++                            i, list(h.shape), h.dtype, h.dim(),
++                            h.abs().max().item(), h.float().mean().item(),
++                        )
++                    logger.warning(
++                        "[DBG][aux] target_hidden_states shape=%s absmax=%.4f has_nan=%s",
++                        list(target_hidden_states.shape),
++                        target_hidden_states.abs().max().item(),
++                        torch.isnan(target_hidden_states).any().item(),
++                    )
+             draft_token_ids = self.drafter._propose(
+                 target_token_ids=target_token_ids,
+                 target_positions=target_positions,
+@@ -3762,8 +3810,12 @@ class NPUModelRunner(GPUModelRunner):
                          self.model_config.hf_text_config, name), name)):
                  self.kv_caches.append(kv_caches[layer_name])
-+            logger.info("[init_kv_cache_tensors] after sort+append, num_kv_caches=%s", len(self.kv_caches))
              for layer_name, kv_cache in kv_caches.items():
 -                self.compilation_config.static_forward_context[
 -                    layer_name].kv_cache = [kv_cache]
@@ -690,11 +641,10 @@ index 6e438f1e..4957d2ad 100644
 +                else:
 +                    self.compilation_config.static_forward_context[
 +                        layer_name].kv_cache = [kv_cache]
-+            logger.info("[init_kv_cache_tensors] after dsv4 bind")
          else:
              from vllm.v1.worker.utils import bind_kv_cache
  
-@@ -3950,7 +4001,7 @@ class NPUModelRunner(GPUModelRunner):
+@@ -3950,7 +4002,7 @@ class NPUModelRunner(GPUModelRunner):
                      for layer_name_inner in kv_cache_tensor.shared_by:
                          # shared the kvcache for all shared layers
                          kv_cache_raw_tensors[layer_name_inner] = tensor
@@ -703,7 +653,7 @@ index 6e438f1e..4957d2ad 100644
                      if self.vllm_config.kv_transfer_config is None:
                          tensor = torch.zeros(kv_cache_tensor.size,
                                                  dtype=torch.int8,
-@@ -4686,10 +4737,35 @@ class NPUModelRunner(GPUModelRunner):
+@@ -4686,10 +4738,35 @@ class NPUModelRunner(GPUModelRunner):
                  continue
              elif self.use_compress:
                  # Skip modules that don't need KV cache (eg encoder-only attention)
