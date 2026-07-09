@@ -1,0 +1,743 @@
+diff --git a/vllm_ascend/models/deepseek_v4.py b/vllm_ascend/models/deepseek_v4.py
+index f516c35e..8fcd1864 100644
+--- a/vllm_ascend/models/deepseek_v4.py
++++ b/vllm_ascend/models/deepseek_v4.py
+@@ -56,7 +56,7 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
+ from vllm.model_executor.layers.quantization import QuantizationConfig
+ from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+ from vllm.model_executor.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
+-from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsEagle, SupportsLoRA, SupportsPP
++from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsEagle, SupportsEagle3, SupportsLoRA, SupportsPP, EagleModelMixin
+ from vllm.model_executor.models.utils import (
+     PPMissingLayer,
+     is_pp_missing_parameter,
+@@ -994,7 +994,7 @@ class DeepseekV2DecoderLayer(nn.Module):
+ 
+ 
+ @support_torch_compile
+-class DeepseekV4Model(nn.Module):
++class DeepseekV4Model(nn.Module, EagleModelMixin):
+     fall_back_to_pt_during_load = False
+ 
+     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+@@ -1081,6 +1081,21 @@ class DeepseekV4Model(nn.Module):
+     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+         return self.embed_tokens(input_ids)
+ 
++    def _maybe_add_hidden_state(
++        self,
++        aux_hidden_states: list[torch.Tensor],
++        layer_idx: int,
++        hidden_states: torch.Tensor,
++        residual: torch.Tensor,
++    ) -> list[torch.Tensor]:
++        if layer_idx in self.aux_hidden_state_layers:
++            # DeepSeek-V4's hc_post already merges residual into hidden_states.
++            # Using hidden_states + residual would double-count the residual,
++            # causing extreme value blowup during prefill (e.g. absmax=77312).
++            # Use hidden_states alone as the correct post-layer representation.
++            aux_hidden_states.append(hidden_states)
++        return aux_hidden_states
++
+     def hc_head(self, x: torch.Tensor, hc_fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor):
+         shape, dtype = x.size(), x.dtype
+         x = x.flatten(1).float()
+@@ -1122,7 +1137,12 @@ class DeepseekV4Model(nn.Module):
+ 
+         if get_pp_group().is_first_rank:
+             hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
+-        for layer in islice(self.layers, self.start_layer, self.end_layer):
++        aux_hidden_states: list[torch.Tensor] = []
++        for idx, layer in enumerate(
++            islice(self.layers, self.start_layer, self.end_layer),
++            start=self.start_layer,
++        ):
++            self._maybe_add_hidden_state(aux_hidden_states, idx, hidden_states, residual)
+             hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
+ 
+         # Stash pre-hc_head residual for the MTP draft (captured copy_).
+@@ -1156,6 +1176,8 @@ class DeepseekV4Model(nn.Module):
+         hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
+ 
+         hidden_states = self.norm(hidden_states)
++        if len(aux_hidden_states) > 0:
++            return hidden_states, aux_hidden_states
+         return hidden_states
+ 
+ 
+@@ -1199,7 +1221,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+             moe.experts.update_expert_map()
+ 
+ 
+-class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle):
++class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle, SupportsEagle3):
+     packed_modules_mapping = {
+         "gate_up_proj": ["gate_proj", "up_proj"],
+     }
+@@ -1288,6 +1310,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
+         forward(); valid after each target step."""
+         return getattr(self.model, "_mtp_hidden_buffer", None)
+ 
++    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
++        self.model._set_aux_hidden_state_layers(layers)
++
++    def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
++        num_layers = len(self.model.layers)
++        return (2, num_layers // 2, num_layers - 3)
++
+     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+         rocm_aiter_moe_shared_expert_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
+         rocm_aiter_moe_shared_expert_enabled = getattr(get_ascend_config(), "mix_placement", False)
+diff --git a/vllm_ascend/patch/platform/patch_kv_cache_utils.py b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
+index 510af152..4992d6f8 100644
+--- a/vllm_ascend/patch/platform/patch_kv_cache_utils.py
++++ b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
+@@ -70,11 +70,14 @@ def group_and_unify_kv_cache_specs(
+ 
+     ratio_specs: dict[int, dict[str, KVCacheSpec]] = defaultdict(dict)
+     grouped_swa_mla_specs: dict[int, dict[str, KVCacheSpec]] = defaultdict(dict)
++    other_specs: dict[str, KVCacheSpec] = {}
+     for name, spec in kv_cache_spec.items():
+         if isinstance(spec, SlidingWindowMLASpec):
+             grouped_swa_mla_specs[spec.block_size][name] = spec
+         elif isinstance(spec, MLAAttentionSpec):
+             ratio_specs[spec.compress_ratio][name] = spec
++        else:
++            other_specs[name] = spec
+ 
+     mla_uniform_specs = []
+     for ratio in sorted(ratio_specs, key=lambda r: (r != 4, r)):
+@@ -89,7 +92,11 @@ def group_and_unify_kv_cache_specs(
+         assert uniform_spec is not None
+         swa_uniform_specs.append(uniform_spec)
+ 
+-    return [*mla_uniform_specs, *swa_uniform_specs]
++    other_uniform_specs: list[UniformTypeKVCacheSpecs] = []
++    if other_specs:
++        other_uniform_specs.append(UniformTypeKVCacheSpecs.from_specs(other_specs))
++
++    return [*mla_uniform_specs, *swa_uniform_specs, *other_uniform_specs]
+ 
+ 
+ def _get_kv_cache_groups_uniform_groups(
+@@ -128,11 +135,13 @@ def _get_kv_cache_groups_uniform_groups(
+     num_layer_tuples_per_group = [round_up(x, num_layer_tuples) for x in num_layer_tuples_per_group]
+ 
+     # TODO(cmq): this is not general enough
+-    swa_mla_specs = grouped_specs[2:]
+-
+-    assert all(
+-        isinstance(spec, SlidingWindowMLASpec) for group in swa_mla_specs for spec in group.kv_cache_specs.values()
+-    )
++    swa_mla_specs = []
++    other_specs = []
++    for g in grouped_specs[2:]:
++        if all(isinstance(spec, SlidingWindowMLASpec) for spec in g.kv_cache_specs.values()):
++            swa_mla_specs.append(g)
++        else:
++            other_specs.append(g)
+ 
+     # Split each SWA UniformKV group into smaller groups to align their #(layer tuples)
+     # Possibly padding layer tuples for this.
+@@ -181,7 +190,17 @@ def _get_kv_cache_groups_uniform_groups(
+                 )
+             )
+ 
+-    return [full_mla_group, full_mla_c128_group, *swa_mla_groups]
++    # Create simple groups for non-SWA, non-MLA specs (e.g. DFlash draft layers)
++    other_groups = []
++    for o_spec in other_specs:
++        other_groups.append(
++            KVCacheGroupSpec(
++                layer_names=list(o_spec.kv_cache_specs.keys()),
++                kv_cache_spec=o_spec,
++            )
++        )
++
++    return [full_mla_group, full_mla_c128_group, *swa_mla_groups, *other_groups]
+ 
+ 
+ def _get_kv_cache_config_deepseek_v4(
+@@ -210,17 +229,23 @@ def _get_kv_cache_config_deepseek_v4(
+     # bucket). bucketed[g_idx][page_size] = [layer_name, ...].
+     mtp_layer_names = []
+     mtp_page_size = 0
++    other_layer_names = []
++    other_page_sizes: dict[str, int] = {}
+     bucketed: list[dict[int, list[str]]] = []
+     for group in kv_cache_groups:
+         assert isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs)
+         specs = group.kv_cache_spec.kv_cache_specs
+         b: dict[int, list[str]] = defaultdict(list)
+         for name in group.layer_names:
+-            if "mtp" not in name:
+-                b[specs[name].page_size_bytes].append(name)
+-            else:
++            if "mtp" in name:
+                 mtp_layer_names.append(name)
+                 mtp_page_size = specs[name].page_size_bytes
++            elif isinstance(specs[name], (SlidingWindowMLASpec, MLAAttentionSpec)):
++                b[specs[name].page_size_bytes].append(name)
++            else:
++                # Draft model layers (e.g. DFlash standard Attention)
++                other_layer_names.append(name)
++                other_page_sizes[name] = specs[name].page_size_bytes
+         bucketed.append(b)
+ 
+     # num_layer_tuples = longest bucket list across all groups. For the
+@@ -243,6 +268,8 @@ def _get_kv_cache_config_deepseek_v4(
+             kv_cache_tensors.append(KVCacheTensor(size=ps * num_blocks, shared_by=shared_by))
+     for i in range(len(mtp_layer_names)):
+         kv_cache_tensors.append(KVCacheTensor(size=mtp_page_size * num_blocks, shared_by=[mtp_layer_names[i]]))
++    for name in other_layer_names:
++        kv_cache_tensors.append(KVCacheTensor(size=other_page_sizes[name] * num_blocks, shared_by=[name]))
+ 
+     return num_blocks, kv_cache_tensors
+ 
+diff --git a/vllm_ascend/patch/platform/patch_speculative_config.py b/vllm_ascend/patch/platform/patch_speculative_config.py
+index 0e7dc5e7..4a53579a 100644
+--- a/vllm_ascend/patch/platform/patch_speculative_config.py
++++ b/vllm_ascend/patch/platform/patch_speculative_config.py
+@@ -14,6 +14,8 @@ else:
+ 
+ def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
+     initial_architecture = hf_config.architectures[0]
++    if initial_architecture.startswith("DFlash"):
++        return hf_config
+     if hf_config.model_type in ("deepseek_v3", "deepseek_v32", "deepseek_v4", "glm_moe_dsa"):
+         target_model_type = hf_config.model_type
+         hf_config.model_type = "deepseek_mtp"
+diff --git a/vllm_ascend/patch/worker/patch_qwen3_dflash.py b/vllm_ascend/patch/worker/patch_qwen3_dflash.py
+index 80dd31c7..a431f95c 100644
+--- a/vllm_ascend/patch/worker/patch_qwen3_dflash.py
++++ b/vllm_ascend/patch/worker/patch_qwen3_dflash.py
+@@ -1,7 +1,9 @@
+ import torch
+ import torch.nn.functional as F
++from vllm.logger import init_logger
+ from vllm.model_executor.models.qwen3_dflash import DFlashQwen3Model
+ 
++logger = init_logger(__name__)
+ 
+ def precompute_and_store_context_kv(
+     self,
+@@ -50,6 +52,12 @@ def precompute_and_store_context_kv(
+     for i in range(L):
+         attn = self._attn_layers[i]
+         kv_cache = attn.kv_cache
++        if kv_cache is None:
++            logger.warning_once(
++                "DFlash draft layer %s has no KV cache bound; "
++                "skipping context KV insert.", attn.layer_name
++            )
++            continue
+         attn.impl.do_kv_cache_update(
+             attn,
+             all_k_final[i],
+@@ -60,3 +68,49 @@ def precompute_and_store_context_kv(
+ 
+ 
+ DFlashQwen3Model.precompute_and_store_context_kv = precompute_and_store_context_kv
++
++
++# ---------------------------------------------------------------------------
++# Patch: adjust target_hidden_size for DeepSeek-V4 target (hc_mult > 1)
++#
++# DeepSeek-V4's intermediate hidden states are 3-D (num_tokens, hc_mult,
++# hidden_size).  When collected as aux hidden states for DFlash they are
++# flattened to (num_tokens, hc_mult * hidden_size).  The draft model's
++# config typically sets target_hidden_size = hidden_size (without hc_mult),
++# which makes the fc layer too small by a factor of hc_mult.  This patch
++# corrects target_hidden_size before DFlashQwen3Model.__init__ creates fc.
++# ---------------------------------------------------------------------------
++
++_original_dflash_init = DFlashQwen3Model.__init__
++
++
++def _patched_dflash_init(
++    self,
++    *,
++    vllm_config,
++    start_layer_id: int = 0,
++    prefix: str = "",
++) -> None:
++    target_config = vllm_config.model_config.hf_config
++    target_hc_mult = getattr(target_config, "hc_mult", 1)
++
++    if target_hc_mult > 1:
++        draft_hf_config = vllm_config.speculative_config.draft_model_config.hf_config
++        current_ts = getattr(draft_hf_config, "target_hidden_size", None)
++        target_hs = getattr(target_config, "hidden_size", None)
++
++        if current_ts is None:
++            if target_hs is not None:
++                draft_hf_config.target_hidden_size = target_hs * target_hc_mult
++        elif target_hs is not None and current_ts == target_hs:
++            draft_hf_config.target_hidden_size = current_ts * target_hc_mult
++
++    _original_dflash_init(
++        self,
++        vllm_config=vllm_config,
++        start_layer_id=start_layer_id,
++        prefix=prefix,
++    )
++
++
++DFlashQwen3Model.__init__ = _patched_dflash_init
+diff --git a/vllm_ascend/spec_decode/dflash_proposer.py b/vllm_ascend/spec_decode/dflash_proposer.py
+index 893d6a78..e3e1778c 100644
+--- a/vllm_ascend/spec_decode/dflash_proposer.py
++++ b/vllm_ascend/spec_decode/dflash_proposer.py
+@@ -1,8 +1,10 @@
+ from typing import Any
+ 
+ import torch
++from typing_extensions import override
+ from vllm.config import CUDAGraphMode, VllmConfig
+ from vllm.forward_context import get_forward_context
++from vllm.logger import init_logger
+ from vllm.v1.attention.backends.utils import CommonAttentionMetadata
+ 
+ from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
+@@ -11,6 +13,8 @@ from vllm_ascend.attention.utils import AscendCommonAttentionMetadata
+ from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_inputs_kernel_single_grid
+ from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
+ 
++logger = init_logger(__name__)
++
+ 
+ class AscendDflashProposer(AscendEagleProposer):
+     def __init__(
+@@ -161,13 +165,16 @@ class AscendDflashProposer(AscendEagleProposer):
+         is_profile=False,
+         **kwargs,
+     ) -> None:
++        logger.info("[DFlash dummy_run] ENTER, is_profile=%s, num_tokens=%s, num_reqs=%s", is_profile, num_tokens, num_reqs)
+         num_query_tokens = min(num_tokens, self.max_query_tokens)
+ 
++        logger.info("[DFlash dummy_run] before _sync_metadata_across_dp")
+         (
+             num_input_tokens,
+             num_tokens_across_dp,
+             _,
+         ) = self.runner._sync_metadata_across_dp(num_query_tokens, is_draft_model=True)
++        logger.info("[DFlash dummy_run] after _sync_metadata_across_dp, num_input_tokens=%s", num_input_tokens)
+ 
+         if not self.use_cuda_graph:
+             aclgraph_runtime_mode = CUDAGraphMode.NONE
+@@ -227,14 +234,16 @@ class AscendDflashProposer(AscendEagleProposer):
+         ):
+             if is_profile:
+                 self.model.precompute_and_store_context_kv(context_states, context_positions)
+-                self.model(
+-                    input_ids=self.input_ids[:num_query_total],
+-                    positions=self._get_positions(num_query_total),
+-                    inputs_embeds=None,
+-                )
++                # Skip the draft model forward during profile run.
++                # The Attention layers would deadlock on TP all-reduce
++                # because KV cache is not allocated yet. The
++                # precompute_and_store_context_kv call above (which
++                # returns early when context_slot_mapping is None) is
++                # sufficient for memory estimation.
+ 
+             else:
+                 self._dflash_num_context = num_input_tokens
++                logger.info("[DFlash dummy_run] before _runnable, num_input_tokens=%s, num_reqs=%s", num_input_tokens, num_reqs)
+                 self._runnable(
+                     num_input_tokens=num_input_tokens,
+                     batch_size=num_reqs,
+@@ -244,6 +253,7 @@ class AscendDflashProposer(AscendEagleProposer):
+                     multi_steps_attn_metadata=multi_steps_attn_metadata,
+                     num_tokens=num_input_tokens,
+                 )
++                logger.info("[DFlash dummy_run] after _runnable")
+ 
+             forward_context = get_forward_context()
+             if forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL and not _EXTRA_CTX.capturing:
+@@ -255,6 +265,15 @@ class AscendDflashProposer(AscendEagleProposer):
+     ) -> dict[str, Any]:
+         num_context = self._dflash_num_context
+ 
++        logger.info(
++            "[DFlash build_model_inputs] num_context=%s, "
++            "context_slot_mapping[:5]=%s, all_zero=%s, "
++            "context_positions[:5]=%s",
++            num_context,
++            self._context_slot_mapping_buffer[:5].tolist(),
++            (self._context_slot_mapping_buffer[:num_context] == 0).all().item(),
++            self._context_positions_buffer[:5].tolist(),
++        )
+         self.model.precompute_and_store_context_kv(
+             self._dflash_hidden_states[:num_context],
+             self._context_positions_buffer[:num_context],
+@@ -267,3 +286,13 @@ class AscendDflashProposer(AscendEagleProposer):
+ 
+     def _raise_if_multimodal(self):
+         pass
++
++    @override
++    def _get_eagle3_use_aux_hidden_state_from_config(self) -> bool:
++        use_aux_hidden_state = True
++        dflash_config = getattr(
++            self.draft_model_config.hf_config, "dflash_config", None
++        )
++        if dflash_config is not None:
++            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
++        return use_aux_hidden_state
+diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
+index 07aba545..68cabf87 100644
+--- a/vllm_ascend/spec_decode/llm_base_proposer.py
++++ b/vllm_ascend/spec_decode/llm_base_proposer.py
+@@ -31,7 +31,7 @@ from vllm.utils.math_utils import cdiv
+ from vllm.utils.platform_utils import is_pin_memory_available
+ from vllm.v1.attention.backends.utils import CommonAttentionMetadata
+ from vllm.v1.core.sched.output import SchedulerOutput
+-from vllm.v1.kv_cache_interface import MLAAttentionSpec
++from vllm.v1.kv_cache_interface import MLAAttentionSpec, SlidingWindowMLASpec
+ from vllm.v1.sample.metadata import SamplingMetadata
+ from vllm.v1.spec_decode.llm_base_proposer import SpecDecodeBaseProposer
+ from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
+@@ -279,11 +279,28 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             AttentionLayerBase,  # type: ignore[type-abstract]
+         )
+         all_indexer_layer_names = set(get_layers_from_vllm_config(self.vllm_config, DeepseekV32IndexerCache).keys())
++        # Use a lightweight proxy to override model_config for draft
++        # layers' get_kv_cache_spec, so that target-only flags (e.g.
++        # use_mla for DeepSeek-V4) don't leak into the draft model's
++        # KV cache spec computation.
++        class _MlaSafeConfigProxy:
++            __slots__ = ("_base", "model_config")
++
++            def __init__(self, base, draft_model_config):
++                self._base = base
++                self.model_config = draft_model_config
++
++            def __getattr__(self, name):
++                return getattr(self._base, name)
++
++        draft_vllm_config = _MlaSafeConfigProxy(
++            self.vllm_config, self.draft_model_config
++        )
+         # Filter to only layers that have KV cache specs.
+         self._draft_attn_layer_names = {
+             name
+             for name in (set(all_attn_layers.keys()) - target_attn_layer_names)
+-            if all_attn_layers[name].get_kv_cache_spec(self.vllm_config) is not None
++            if all_attn_layers[name].get_kv_cache_spec(draft_vllm_config) is not None
+         } - all_indexer_layer_names
+ 
+         self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
+@@ -674,7 +691,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             assert isinstance(
+                 self.get_model(), (Eagle3LlamaForCausalLM, DFlashQwen3ForCausalLM, Eagle3DeepseekV2ForCausalLM)
+             )
++            logger.info(
++                "[DFlash diagnose] BEFORE combine: target_hidden_states shape=%s, mean=%s, has_nan=%s",
++                tuple(target_hidden_states.shape),
++                target_hidden_states.float().mean().item() if target_hidden_states.numel() > 0 else "empty",
++                torch.isnan(target_hidden_states).any().item() if target_hidden_states.numel() > 0 else False,
++            )
+             target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
++            logger.info(
++                "[DFlash diagnose] AFTER combine: target_hidden_states shape=%s, mean=%s, std=%s, has_nan=%s",
++                tuple(target_hidden_states.shape),
++                target_hidden_states.float().mean().item() if target_hidden_states.numel() > 0 else "empty",
++                target_hidden_states.float().std().item() if target_hidden_states.numel() > 0 else 0.0,
++                torch.isnan(target_hidden_states).any().item() if target_hidden_states.numel() > 0 else False,
++            )
+             assert target_hidden_states.shape[-1] == self.hidden_size
+ 
+         num_tokens, token_indices_to_sample, common_attn_metadata, long_seq_args = self.set_inputs_first_pass(
+@@ -817,12 +847,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+         builder = self.draft_attn_groups[0].get_metadata_builder()
+         extra_attn_metadata_args: dict = {}
+         if self.use_compress:
+-            extra_attn_metadata_args = dict(
+-                prefill_ratio_to_sas_metadata=dict(),
+-                decode_ratio_to_sas_metadata=dict(),
+-                common_ratio_to_sas_metadata=dict(),
+-                block_size=self.draft_attn_groups[0].kv_cache_spec.block_size,
+-            )
++            draft_spec = self.draft_attn_groups[0].kv_cache_spec
++            from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs
++            if isinstance(draft_spec, UniformTypeKVCacheSpecs):
++                draft_spec = next(iter(draft_spec.kv_cache_specs.values()))
++            if isinstance(draft_spec, (MLAAttentionSpec, SlidingWindowMLASpec)):
++                extra_attn_metadata_args = dict(
++                    prefill_ratio_to_sas_metadata=dict(),
++                    decode_ratio_to_sas_metadata=dict(),
++                    common_ratio_to_sas_metadata=dict(),
++                    block_size=self.draft_attn_groups[0].kv_cache_spec.block_size,
++                )
+         attn_metadata = builder.build(0, common_attn_metadata, self.runner.get_model(), **extra_attn_metadata_args)
+ 
+         if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
+@@ -1015,11 +1050,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+             if self.pass_hidden_states_to_model:
+                 model_hidden_states = self.hidden_states[:num_input_tokens]
+                 model_hidden_states, model_positions = self.maybe_pad_and_reduce(model_hidden_states, model_positions)
+-                model_kwargs["hidden_states"] = model_hidden_states
+-                if self.method == "mtp":
+-                    model_kwargs["positions"] = model_positions
+ 
++        logger.info("[_run_merged_draft] before model forward, method=%s", self.method)
+         ret_hidden_states = self.model(**model_kwargs)
++        logger.info("[_run_merged_draft] after model forward")
+         if not self.model_returns_tuple():
+             last_hidden_states = ret_hidden_states
+             hidden_states = last_hidden_states
+@@ -1092,6 +1126,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+                     token_indices_to_sample = token_indices_to_sample[:num_indices]
+                 draft_token_ids = logits.argmax(dim=-1)
+ 
++        logger.info(
++            "[DFlash diagnose] sample_hidden_states shape=%s, mean=%s, std=%s, has_nan=%s, has_inf=%s",
++            tuple(sample_hidden_states.shape),
++            sample_hidden_states.float().mean().item(),
++            sample_hidden_states.float().std().item(),
++            torch.isnan(sample_hidden_states).any().item(),
++            torch.isinf(sample_hidden_states).any().item(),
++        )
++        logger.info(
++            "[DFlash diagnose] draft_token_ids=%s, shape=%s",
++            draft_token_ids.tolist()[:20],
++            tuple(draft_token_ids.shape),
++        )
++
+         # Early exit if there is only one draft token to be generated.
+         if self.num_speculative_tokens == 1 or self.parallel_drafting:
+             # [batch_size, 1]
+diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
+index 6e438f1e..4957d2ad 100644
+--- a/vllm_ascend/worker/model_runner_v1.py
++++ b/vllm_ascend/worker/model_runner_v1.py
+@@ -249,6 +249,20 @@ class ExecuteModelState(NamedTuple):
+     batch_desc: BatchDescriptor
+ 
+ 
++class _MlaSafeConfigProxy:
++    """Lightweight proxy that overrides model_config (use_mla=False for
++    draft models) while delegating all other attributes to the base config."""
++
++    __slots__ = ("_base", "model_config")
++
++    def __init__(self, base, draft_model_config):
++        self._base = base
++        self.model_config = draft_model_config
++
++    def __getattr__(self, name):
++        return getattr(self._base, name)
++
++
+ class NPUModelRunner(GPUModelRunner):
+     def __init__(self, vllm_config: VllmConfig, device: torch.device):
+         # TODO(qcs): These manual pad and unpad for GPUModelRunner are
+@@ -604,6 +618,9 @@ class NPUModelRunner(GPUModelRunner):
+                 if self.speculative_config.method == "eagle3":
+                     assert isinstance(self.drafter, AscendEagleProposer)
+                     self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
++                elif self.speculative_config.method == "dflash":
++                    assert isinstance(self.drafter, AscendDflashProposer)
++                    self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
+                 elif self.speculative_config.method == "extract_hidden_states":
+                     assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
+                     self.use_aux_hidden_state_outputs = True
+@@ -1783,11 +1800,15 @@ class NPUModelRunner(GPUModelRunner):
+             # (e.g. DeepSeek V4 MTP needs the pre-hc_head residual). Safe to
+             # rebind here: hidden_states was already consumed for sampling
+             # above and is not used again in this branch.
+-            mtp_hidden_states = getattr(
+-                self.get_model(), "get_mtp_target_hidden_states", lambda: None
+-            )()
+-            if mtp_hidden_states is not None:
+-                hidden_states = mtp_hidden_states
++            # When use_aux_hidden_state_outputs is True (eagle3, dflash),
++            # target_hidden_states comes from aux_hidden_states, so the MTP
++            # override is not needed.
++            if not self.use_aux_hidden_state_outputs:
++                mtp_hidden_states = getattr(
++                    self.get_model(), "get_mtp_target_hidden_states", lambda: None
++                )()
++                if mtp_hidden_states is not None:
++                    hidden_states = mtp_hidden_states
+ 
+             num_rejected_tokens_gpu = None
+             if spec_decode_metadata is None:
+@@ -1798,14 +1819,19 @@ class NPUModelRunner(GPUModelRunner):
+                     target_positions = self._get_positions(num_scheduled_tokens)
+                     target_hidden_states = hidden_states
+                     if self.use_aux_hidden_state_outputs:
+-                        target_hidden_states = torch.cat([h for h in aux_hidden_states], dim=-1)
++                        target_hidden_states = torch.cat(
++                            [h.flatten(1) if h.dim() > 2 else h for h in aux_hidden_states], dim=-1
++                        )
+                 else:
+                     token_indices_to_sample = None
+                     # input_ids can be None for multimodal models.
+                     target_token_ids = self.input_ids.gpu[:num_scheduled_tokens]
+                     target_positions = self._get_positions(num_scheduled_tokens)
+                     if self.use_aux_hidden_state_outputs:
+-                        target_hidden_states = torch.cat([h[:num_scheduled_tokens] for h in aux_hidden_states], dim=-1)
++                        target_hidden_states = torch.cat(
++                            [h[:num_scheduled_tokens].flatten(1) if h.dim() > 2 else h[:num_scheduled_tokens] for h in aux_hidden_states],
++                            dim=-1,
++                        )
+                     else:
+                         target_hidden_states = hidden_states[:num_scheduled_tokens]
+             else:
+@@ -1835,12 +1861,17 @@ class NPUModelRunner(GPUModelRunner):
+                     target_positions = positions
+                     target_hidden_states = hidden_states
+                     if self.use_aux_hidden_state_outputs:
+-                        target_hidden_states = torch.cat([h for h in aux_hidden_states], dim=-1)
++                        target_hidden_states = torch.cat(
++                            [h.flatten(1) if h.dim() > 2 else h for h in aux_hidden_states], dim=-1
++                        )
+                 else:
+                     target_token_ids = self.input_ids.gpu[token_indices]
+                     target_positions = self._get_positions(token_indices)
+                     if self.use_aux_hidden_state_outputs:
+-                        target_hidden_states = torch.cat([h[token_indices] for h in aux_hidden_states], dim=-1)
++                        target_hidden_states = torch.cat(
++                            [h[token_indices].flatten(1) if h.dim() > 2 else h[token_indices] for h in aux_hidden_states],
++                            dim=-1,
++                        )
+                     else:
+                         target_hidden_states = hidden_states[token_indices]
+             assert self.drafter is not None
+@@ -3508,9 +3539,11 @@ class NPUModelRunner(GPUModelRunner):
+                 has_sinks = self._has_sinks,
+                 input_ids=input_ids,
+             ):
++                logger.info("[_dummy_run] before target model forward, is_profile=%s, use_aux=%s", is_profile, self.use_aux_hidden_state_outputs)
+                 outputs = self._model_forward(
+                     num_tokens_padded, input_ids, positions, intermediate_tensors, inputs_embeds
+                 )
++                logger.info("[_dummy_run] after target model forward")
+             if self.use_aux_hidden_state_outputs:
+                 hidden_states, _ = outputs
+             else:
+@@ -3518,6 +3551,7 @@ class NPUModelRunner(GPUModelRunner):
+             dummy_compute_logits(hidden_states)
+ 
+             if self.drafter:
++                logger.info("[_dummy_run] before drafter dummy_run")
+                 self.drafter.dummy_run(
+                     num_tokens=num_tokens_padded,
+                     with_prefill=with_prefill,
+@@ -3682,7 +3716,9 @@ class NPUModelRunner(GPUModelRunner):
+         self.may_add_encoder_only_layers_to_kv_cache_config()
+         self.maybe_add_kv_sharing_layers_to_kv_cache_groups(kv_cache_config)
+         # NOTE(cmq): initialize_attn_backend must before using self.attn_groups
++        logger.info("[initialize_kv_cache] before initialize_attn_backend")
+         self.initialize_attn_backend(kv_cache_config, is_profiling=is_profiling)
++        logger.info("[initialize_kv_cache] after initialize_attn_backend")
+         self.use_hybrid_blocks = len(self.attn_groups) > 1
+         # NOTE: Currently, we determine whether we need `num_accepted_tokens` through `MambaSpec`.
+         self.need_accepted_tokens = any(
+@@ -3690,7 +3726,9 @@ class NPUModelRunner(GPUModelRunner):
+         )
+ 
+         self.may_reinitialize_input_batch(kv_cache_config)
++        logger.info("[initialize_kv_cache] before initialize_kv_cache_tensors")
+         kv_caches = self.initialize_kv_cache_tensors(kv_cache_config)
++        logger.info("[initialize_kv_cache] after initialize_kv_cache_tensors")
+         # TODO: refactor the logic of attention
+         if (
+             self.speculative_config
+@@ -3706,7 +3744,9 @@ class NPUModelRunner(GPUModelRunner):
+             )
+             block_size = (self.kernel_block_sizes[0] if isinstance(
+                 self.kernel_block_sizes, list) else self.kernel_block_sizes)
++            logger.info("[initialize_kv_cache] before drafter.initialize_attn_backend")
+             self.drafter.initialize_attn_backend(kv_cache_config, block_size)
++            logger.info("[initialize_kv_cache] after drafter.initialize_attn_backend")
+ 
+         if has_kv_transfer_group() and not is_profiling:
+             get_kv_transfer_group().register_kv_caches(kv_caches)
+@@ -3743,9 +3783,13 @@ class NPUModelRunner(GPUModelRunner):
+             corresponding memory buffer for KV cache.
+         """
+         # Initialize the memory buffer for KV cache
++        logger.info("[init_kv_cache_tensors] before _allocate_kv_cache_tensors")
+         kv_cache_raw_tensors = self._allocate_kv_cache_tensors(kv_cache_config)
++        logger.info("[init_kv_cache_tensors] after _allocate_kv_cache_tensors")
+         # Change the memory buffer to the desired shape
++        logger.info("[init_kv_cache_tensors] before _reshape_kv_cache_tensors")
+         kv_caches = self._reshape_kv_cache_tensors(kv_cache_config, kv_cache_raw_tensors)
++        logger.info("[init_kv_cache_tensors] after _reshape_kv_cache_tensors, num_layers=%s", len(kv_caches))
+ 
+         # Set up cross-layer KV cache sharing
+         for layer_name, target_layer_name in self.shared_kv_cache_layers.items():
+@@ -3756,14 +3800,21 @@ class NPUModelRunner(GPUModelRunner):
+             from vllm_ascend.utils import extract_dsv4_layer_index
+ 
+             assert len(self.kv_caches) == 0
++            logger.info("[init_kv_cache_tensors] before dsv4 bind, kv_caches keys sample=%s", list(kv_caches.keys())[:5])
+             for layer_name in sorted(
+                     kv_caches,
+                     key=lambda name: (extract_dsv4_layer_index(
+                         self.model_config.hf_text_config, name), name)):
+                 self.kv_caches.append(kv_caches[layer_name])
++            logger.info("[init_kv_cache_tensors] after sort+append, num_kv_caches=%s", len(self.kv_caches))
+             for layer_name, kv_cache in kv_caches.items():
+-                self.compilation_config.static_forward_context[
+-                    layer_name].kv_cache = [kv_cache]
++                if isinstance(kv_cache, tuple):
++                    self.compilation_config.static_forward_context[
++                        layer_name].kv_cache = list(kv_cache)
++                else:
++                    self.compilation_config.static_forward_context[
++                        layer_name].kv_cache = [kv_cache]
++            logger.info("[init_kv_cache_tensors] after dsv4 bind")
+         else:
+             from vllm.v1.worker.utils import bind_kv_cache
+ 
+@@ -3950,7 +4001,7 @@ class NPUModelRunner(GPUModelRunner):
+                     for layer_name_inner in kv_cache_tensor.shared_by:
+                         # shared the kvcache for all shared layers
+                         kv_cache_raw_tensors[layer_name_inner] = tensor
+-                elif "attn" in layer_name and self.use_compress and layer_name not in kv_cache_raw_tensors:
++                elif "attn" in layer_name and self.use_compress and isinstance(layer_kv_cache_spec.get(layer_name), (MLAAttentionSpec, SlidingWindowMLASpec)) and layer_name not in kv_cache_raw_tensors:
+                     if self.vllm_config.kv_transfer_config is None:
+                         tensor = torch.zeros(kv_cache_tensor.size,
+                                                 dtype=torch.int8,
+@@ -4686,10 +4737,35 @@ class NPUModelRunner(GPUModelRunner):
+                 continue
+             elif self.use_compress:
+                 # Skip modules that don't need KV cache (eg encoder-only attention)
+-                if spec := attn_module.get_kv_cache_spec(self.vllm_config):
++                # For draft Attention layers with sliding_window (e.g. DFlash),
++                # use a config where use_mla=False to avoid the MLA assertion.
++                cfg = self.vllm_config
++                draft_mc = (
++                    self.vllm_config.speculative_config.draft_model_config
++                    if self.vllm_config.speculative_config
++                    else None
++                )
++                if (
++                    isinstance(attn_module, Attention)
++                    and attn_module.sliding_window is not None
++                    and draft_mc is not None
++                ):
++                    cfg = _MlaSafeConfigProxy(self.vllm_config, draft_mc)
++                if spec := attn_module.get_kv_cache_spec(cfg):
+                     kv_cache_spec[layer_name] = spec
+             elif isinstance(attn_module, Attention):
+-                if spec := attn_module.get_kv_cache_spec(self.vllm_config):
++                cfg = self.vllm_config
++                draft_mc = (
++                    self.vllm_config.speculative_config.draft_model_config
++                    if self.vllm_config.speculative_config
++                    else None
++                )
++                if (
++                    attn_module.sliding_window is not None
++                    and draft_mc is not None
++                ):
++                    cfg = _MlaSafeConfigProxy(self.vllm_config, draft_mc)
++                if spec := attn_module.get_kv_cache_spec(cfg):
+                     kv_cache_spec[layer_name] = spec
+                     attn_layer_names.add(layer_name)
+ 
