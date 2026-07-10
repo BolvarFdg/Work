@@ -329,7 +329,7 @@ index 893d6a78..72947273 100644
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
 diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
-index 07aba545..483b1e72 100644
+index 07aba545..38f25b6a 100644
 --- a/vllm_ascend/spec_decode/llm_base_proposer.py
 +++ b/vllm_ascend/spec_decode/llm_base_proposer.py
 @@ -31,7 +31,7 @@ from vllm.utils.math_utils import cdiv
@@ -371,7 +371,7 @@ index 07aba545..483b1e72 100644
          } - all_indexer_layer_names
  
          self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
-@@ -339,6 +356,25 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -339,6 +356,45 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              self.kernel_block_size,
          )
  
@@ -393,11 +393,31 @@ index 07aba545..483b1e72 100644
 +                getattr(self.model.model, "use_aux_hidden_state", "?"),
 +                self.eagle3_use_aux_hidden_state,
 +            )
++            if _fc is not None:
++                _fc_w = _fc.weight.data
++                logger.warning(
++                    "[DBG][init] fc.weight absmax=%.6f mean=%.6f std=%.6f "
++                    "(random_init? absmax~%.6f for fan_in=%d)",
++                    _fc_w.abs().max().item(),
++                    _fc_w.float().mean().item(),
++                    _fc_w.float().std().item(),
++                    (1.0 / (_fc_w.shape[1] ** 0.5)),
++                    _fc_w.shape[1],
++                )
++            if _d2t is not None:
++                logger.warning(
++                    "[DBG][init] d2t sum=%s unique=%d min=%s max=%s "
++                    "(all_zero? sum==0 means NOT loaded)",
++                    _d2t.sum().item(),
++                    _d2t.unique().numel(),
++                    _d2t.min().item(),
++                    _d2t.max().item(),
++                )
 +
      def _maybe_share_embeddings(self, target_language_model: nn.Module) -> None:
          """
          Some draft models may not have their own embedding layers, and some may
-@@ -674,8 +710,31 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -674,8 +730,31 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              assert isinstance(
                  self.get_model(), (Eagle3LlamaForCausalLM, DFlashQwen3ForCausalLM, Eagle3DeepseekV2ForCausalLM)
              )
@@ -429,7 +449,7 @@ index 07aba545..483b1e72 100644
  
          num_tokens, token_indices_to_sample, common_attn_metadata, long_seq_args = self.set_inputs_first_pass(
              target_token_ids=target_token_ids,
-@@ -817,12 +876,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -817,12 +896,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          builder = self.draft_attn_groups[0].get_metadata_builder()
          extra_attn_metadata_args: dict = {}
          if self.use_compress:
@@ -453,7 +473,7 @@ index 07aba545..483b1e72 100644
          attn_metadata = builder.build(0, common_attn_metadata, self.runner.get_model(), **extra_attn_metadata_args)
  
          if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
-@@ -978,12 +1042,39 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -978,12 +1062,39 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
      def compute_draft_token_ids(self, hidden_states: torch.Tensor):
          logits = self.model.logits_processor(self.model.lm_head, hidden_states)
          if not hasattr(self.model, "draft_id_to_target_id") or self.model.draft_id_to_target_id is None:
@@ -493,7 +513,7 @@ index 07aba545..483b1e72 100644
          return next_token + bias
  
      def _run_merged_draft(
-@@ -1095,7 +1186,16 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -1095,7 +1206,16 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          # Early exit if there is only one draft token to be generated.
          if self.num_speculative_tokens == 1 or self.parallel_drafting:
              # [batch_size, 1]
@@ -512,7 +532,7 @@ index 07aba545..483b1e72 100644
          if self.pcp_size * self.dcp_size > 1 and is_prefill:
              draft_token_ids_list = []
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
-index 6e438f1e..eeb51550 100644
+index 6e438f1e..8edc2b00 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
 +++ b/vllm_ascend/worker/model_runner_v1.py
 @@ -249,6 +249,20 @@ class ExecuteModelState(NamedTuple):
@@ -589,7 +609,7 @@ index 6e438f1e..eeb51550 100644
                      else:
                          target_hidden_states = hidden_states[:num_scheduled_tokens]
              else:
-@@ -1835,15 +1861,37 @@ class NPUModelRunner(GPUModelRunner):
+@@ -1835,15 +1861,45 @@ class NPUModelRunner(GPUModelRunner):
                      target_positions = positions
                      target_hidden_states = hidden_states
                      if self.use_aux_hidden_state_outputs:
@@ -612,8 +632,16 @@ index 6e438f1e..eeb51550 100644
 +            if self.use_aux_hidden_state_outputs and aux_hidden_states is not None:
 +                if not hasattr(self, "_dbg_aux_cnt"):
 +                    self._dbg_aux_cnt = 0
-+                if self._dbg_aux_cnt < 3:
++                if self._dbg_aux_cnt < 5:
 +                    self._dbg_aux_cnt += 1
++                    logger.warning(
++                        "[DBG][aux] num_features=%d (fc expects %d = target_hidden_size %s / hidden %s * %s layers)",
++                        len(aux_hidden_states),
++                        _fc_in_dim if (_fc_in_dim := target_hidden_states.shape[-1]) else "?",
++                        getattr(self.drafter.draft_model_config.hf_config, "target_hidden_size", "?"),
++                        getattr(self.drafter.draft_model_config.hf_config, "hidden_size", "?"),
++                        getattr(self.drafter.draft_model_config.hf_config, "num_hidden_layers", "?"),
++                    )
 +                    for i, h in enumerate(aux_hidden_states):
 +                        logger.warning(
 +                            "[DBG][aux] layer_feat[%d] shape=%s dtype=%s dim=%d absmax=%.4f mean=%.6f",
@@ -629,7 +657,7 @@ index 6e438f1e..eeb51550 100644
              draft_token_ids = self.drafter._propose(
                  target_token_ids=target_token_ids,
                  target_positions=target_positions,
-@@ -3762,8 +3810,12 @@ class NPUModelRunner(GPUModelRunner):
+@@ -3762,8 +3818,12 @@ class NPUModelRunner(GPUModelRunner):
                          self.model_config.hf_text_config, name), name)):
                  self.kv_caches.append(kv_caches[layer_name])
              for layer_name, kv_cache in kv_caches.items():
@@ -644,7 +672,7 @@ index 6e438f1e..eeb51550 100644
          else:
              from vllm.v1.worker.utils import bind_kv_cache
  
-@@ -3950,7 +4002,7 @@ class NPUModelRunner(GPUModelRunner):
+@@ -3950,7 +4010,7 @@ class NPUModelRunner(GPUModelRunner):
                      for layer_name_inner in kv_cache_tensor.shared_by:
                          # shared the kvcache for all shared layers
                          kv_cache_raw_tensors[layer_name_inner] = tensor
@@ -653,7 +681,7 @@ index 6e438f1e..eeb51550 100644
                      if self.vllm_config.kv_transfer_config is None:
                          tensor = torch.zeros(kv_cache_tensor.size,
                                                  dtype=torch.int8,
-@@ -4686,10 +4738,35 @@ class NPUModelRunner(GPUModelRunner):
+@@ -4686,10 +4746,35 @@ class NPUModelRunner(GPUModelRunner):
                  continue
              elif self.use_compress:
                  # Skip modules that don't need KV cache (eg encoder-only attention)
