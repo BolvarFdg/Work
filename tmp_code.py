@@ -1,10 +1,9 @@
-fc_w = self.model.fc.weight
-# Lightweight diagnostic: check first few elements without .float() copy
-w_slice = fc_w.data[:2, :5].cpu().tolist()
-import logging
-logging.getLogger("vllm").info(
-    "[DFlash fc diagnose] fc.weight shape=%s, "
-    "first_2x5=%s, all_zero=%s, has_nan=%s",
-    tuple(fc_w.shape), w_slice,
-    (fc_w == 0).all().item(), torch.isnan(fc_w).any().item(),
-)
+if self._dbg_precompute_cnt <= 5:
+    logger.warning(
+        "[DBG][precompute] AFTER RMSNorm: absmax=%.4f mean=%.6f std=%.6f "
+        "hidden_norm_weight_absmax=%.4f",
+        normed_context_states.abs().max().item(),
+        normed_context_states.float().mean().item(),
+        normed_context_states.float().std().item(),
+        self._hidden_norm_weight.abs().max().item(),
+    )
