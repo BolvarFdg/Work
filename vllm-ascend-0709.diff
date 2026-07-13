@@ -208,7 +208,7 @@ index 0e7dc5e7..4a53579a 100644
          target_model_type = hf_config.model_type
          hf_config.model_type = "deepseek_mtp"
 diff --git a/vllm_ascend/patch/worker/patch_qwen3_dflash.py b/vllm_ascend/patch/worker/patch_qwen3_dflash.py
-index 80dd31c7..dd75ae20 100644
+index 80dd31c7..bcde59de 100644
 --- a/vllm_ascend/patch/worker/patch_qwen3_dflash.py
 +++ b/vllm_ascend/patch/worker/patch_qwen3_dflash.py
 @@ -1,7 +1,9 @@
@@ -221,7 +221,7 @@ index 80dd31c7..dd75ae20 100644
  
  def precompute_and_store_context_kv(
      self,
-@@ -18,6 +20,19 @@ def precompute_and_store_context_kv(
+@@ -18,8 +20,36 @@ def precompute_and_store_context_kv(
      hd = self._head_dim
      nkv = self._num_kv_heads
  
@@ -240,8 +240,25 @@ index 80dd31c7..dd75ae20 100644
 +
      # --- Fused KV projection (one GEMM for all layers) ---
      normed_context_states = self.hidden_norm(context_states)
++    if self._dbg_precompute_cnt <= 5:
++        _cs = normed_context_states
++        _diff_cs = -1.0
++        if _cs.shape[0] > 1:
++            _diff_cs = (_cs[0].float() - _cs[1].float()).abs().max().item()
++        logger.warning(
++            "[DBG][precompute] AFTER RMSNorm: absmax=%.4f mean=%.6f std=%.6f "
++            "hidden_norm_weight_absmax=%.4f pos0_vs_pos1_diff=%.6f "
++            "(diff~0 means context K/V nearly identical for all positions!)",
++            _cs.abs().max().item(),
++            _cs.float().mean().item(),
++            _cs.float().std().item(),
++            self._hidden_norm_weight.abs().max().item(),
++            _diff_cs,
++        )
      all_kv_flat = F.linear(normed_context_states, self._fused_kv_weight, self._fused_kv_bias)
-@@ -50,6 +65,12 @@ def precompute_and_store_context_kv(
+     # Single contiguous copy that separates K/V and transposes to
+     # layer-major layout.  Result: [2, L, num_ctx, nkv, hd] contiguous.
+@@ -50,6 +80,12 @@ def precompute_and_store_context_kv(
      for i in range(L):
          attn = self._attn_layers[i]
          kv_cache = attn.kv_cache
@@ -254,7 +271,7 @@ index 80dd31c7..dd75ae20 100644
          attn.impl.do_kv_cache_update(
              attn,
              all_k_final[i],
-@@ -60,3 +81,49 @@ def precompute_and_store_context_kv(
+@@ -60,3 +96,49 @@ def precompute_and_store_context_kv(
  
  
  DFlashQwen3Model.precompute_and_store_context_kv = precompute_and_store_context_kv
@@ -349,7 +366,7 @@ index 893d6a78..72947273 100644
 +            use_aux_hidden_state = dflash_config.get("use_aux_hidden_state", True)
 +        return use_aux_hidden_state
 diff --git a/vllm_ascend/spec_decode/llm_base_proposer.py b/vllm_ascend/spec_decode/llm_base_proposer.py
-index 07aba545..38f25b6a 100644
+index 07aba545..f18f3a9f 100644
 --- a/vllm_ascend/spec_decode/llm_base_proposer.py
 +++ b/vllm_ascend/spec_decode/llm_base_proposer.py
 @@ -31,7 +31,7 @@ from vllm.utils.math_utils import cdiv
@@ -391,7 +408,7 @@ index 07aba545..38f25b6a 100644
          } - all_indexer_layer_names
  
          self.attn_layer_names = list(sorted(self._draft_attn_layer_names))
-@@ -339,6 +356,45 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -339,6 +356,83 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              self.kernel_block_size,
          )
  
@@ -433,11 +450,49 @@ index 07aba545..38f25b6a 100644
 +                    _d2t.min().item(),
 +                    _d2t.max().item(),
 +                )
++            # Check ALL critical draft weights
++            _m = self.model.model  # DFlashQwen3Model
++            _w_checks = {}
++            # hidden_norm
++            _w_checks["hidden_norm"] = (_m.hidden_norm.weight.data, "ones?")
++            # final norm
++            if hasattr(_m, "norm"):
++                _w_checks["norm"] = (_m.norm.weight.data, "ones?")
++            # first layer attention + mlp
++            if len(_m.layers) > 0:
++                _lyr = _m.layers[0]
++                if hasattr(_lyr.self_attn, "qkv_proj"):
++                    _w_checks["qkv_proj"] = (_lyr.self_attn.qkv_proj.weight.data, "random?")
++                if hasattr(_lyr.self_attn, "o_proj"):
++                    _w_checks["o_proj"] = (_lyr.self_attn.o_proj.weight.data, "random?")
++                if hasattr(_lyr.mlp, "gate_up_proj"):
++                    _w_checks["gate_up_proj"] = (_lyr.mlp.gate_up_proj.weight.data, "random?")
++                if hasattr(_lyr.mlp, "down_proj"):
++                    _w_checks["down_proj"] = (_lyr.mlp.down_proj.weight.data, "random?")
++                if hasattr(_lyr, "input_layernorm"):
++                    _w_checks["input_layernorm"] = (_lyr.input_layernorm.weight.data, "ones?")
++                if hasattr(_lyr, "post_attention_layernorm"):
++                    _w_checks["post_attn_norm"] = (_lyr.post_attention_layernorm.weight.data, "ones?")
++            # lm_head
++            if hasattr(self.model, "lm_head"):
++                _w_checks["lm_head"] = (self.model.lm_head.weight.data, "random?")
++            # fused_kv_weight (built in _build_fused_kv_buffers)
++            if hasattr(_m, "_fused_kv_weight"):
++                _w_checks["fused_kv"] = (_m._fused_kv_weight.data, "random?")
++            for _name, (_w, _hint) in _w_checks.items():
++                logger.warning(
++                    "[DBG][weights] %-20s shape=%s absmax=%.6f mean=%.6f std=%.6f (%s)",
++                    _name, list(_w.shape),
++                    _w.abs().max().item(),
++                    _w.float().mean().item(),
++                    _w.float().std().item(),
++                    _hint,
++                )
 +
      def _maybe_share_embeddings(self, target_language_model: nn.Module) -> None:
          """
          Some draft models may not have their own embedding layers, and some may
-@@ -674,8 +730,31 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -674,8 +768,31 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
              assert isinstance(
                  self.get_model(), (Eagle3LlamaForCausalLM, DFlashQwen3ForCausalLM, Eagle3DeepseekV2ForCausalLM)
              )
@@ -469,7 +524,7 @@ index 07aba545..38f25b6a 100644
  
          num_tokens, token_indices_to_sample, common_attn_metadata, long_seq_args = self.set_inputs_first_pass(
              target_token_ids=target_token_ids,
-@@ -817,12 +896,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -817,12 +934,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          builder = self.draft_attn_groups[0].get_metadata_builder()
          extra_attn_metadata_args: dict = {}
          if self.use_compress:
@@ -493,7 +548,7 @@ index 07aba545..38f25b6a 100644
          attn_metadata = builder.build(0, common_attn_metadata, self.runner.get_model(), **extra_attn_metadata_args)
  
          if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
-@@ -978,12 +1062,39 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -978,12 +1100,39 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
      def compute_draft_token_ids(self, hidden_states: torch.Tensor):
          logits = self.model.logits_processor(self.model.lm_head, hidden_states)
          if not hasattr(self.model, "draft_id_to_target_id") or self.model.draft_id_to_target_id is None:
@@ -533,7 +588,33 @@ index 07aba545..38f25b6a 100644
          return next_token + bias
  
      def _run_merged_draft(
-@@ -1095,7 +1206,16 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+@@ -1063,6 +1212,25 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
+ 
+         sample_hidden_states = last_hidden_states[token_indices_to_sample]
+ 
++        if not hasattr(self, "_dbg_hs_cnt"):
++            self._dbg_hs_cnt = 0
++        if self._dbg_hs_cnt < 5:
++            self._dbg_hs_cnt += 1
++            # Check if hidden states differ across positions
++            if sample_hidden_states.shape[0] > 1:
++                _diff = (sample_hidden_states[0] - sample_hidden_states[1]).abs().max().item()
++            else:
++                _diff = -1.0
++            logger.warning(
++                "[DBG][hs] sample_hidden_states shape=%s absmax=%.4f mean=%.6f std=%.6f "
++                "pos0_vs_pos1_diff=%.6f (diff=0 means all positions identical!)",
++                list(sample_hidden_states.shape),
++                sample_hidden_states.abs().max().item(),
++                sample_hidden_states.float().mean().item(),
++                sample_hidden_states.float().std().item(),
++                _diff,
++            )
++
+         if get_ascend_config().enable_reduce_sample and self.method in ("eagle3", "dflash"):
+             draft_token_ids = self.compute_draft_token_ids(sample_hidden_states)
+             if lmhead_tp_enable() and num_indices < draft_token_ids.shape[0]:
+@@ -1095,7 +1263,16 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
          # Early exit if there is only one draft token to be generated.
          if self.num_speculative_tokens == 1 or self.parallel_drafting:
              # [batch_size, 1]
