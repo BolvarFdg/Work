@@ -1,3 +1,6 @@
-卡住一会之后就会报错：
-E0713 site-package/torch/distributed/elastic/multiprocessing/api.py:984 failed (exitcode:1) local_rank:1(pid:3743) of binary:/usr/local/python3.12.13/bin/python3
-
+日志为：
+[DBG][precompute]AFTER RMSNorm:absmax=4.3438 mean=-0.006338 std=0.999979 hidden_norm_weight_absmax=1.0000 pos0_vs_pos1_diff=5.156250 (diff~0 means context K/V nearly identical for all positions!)
+[DBG][precompute]AFTER RMSNorm:absmax=3.8750 mean=-0.007371 std=0.999967 hidden_norm_weight_absmax=1.0000 pos0_vs_pos1_diff=4.046875 (diff~0 means context K/V nearly identical for all positions!)
+[DBG][precompute]AFTER RMSNorm:absmax=4.3125 mean=-0.003331 std=1.000028 hidden_norm_weight_absmax=1.0000 pos0_vs_pos1_diff=4.820312 (diff~0 means context K/V nearly identical for all positions!)
+[DBG][precompute]AFTER RMSNorm:absmax=4.3438 mean=0.001958 std=1.000000 hidden_norm_weight_absmax=1.0000 pos0_vs_pos1_diff=3.843750 (diff~0 means context K/V nearly identical for all positions!)
+[DBG][precompute]AFTER RMSNorm:absmax=4.2812 mean=-0.003157 std=1.000009 hidden_norm_weight_absmax=1.0000 pos0_vs_pos1_diff=3.917236 (diff~0 means context K/V nearly identical for all positions!)
