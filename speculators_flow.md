@@ -1,3 +1,141 @@
+## DFlash 训练全流程对照
+
+```
+数据加载 → 前向传播 → 计算损失 → 反向传播 → 参数更新
+```
+
+每一步的具体代码位置和作用如下：
+
+---
+
+### 1. 数据加载
+
+| 子步骤 | 文件:方法:行号 | 干了什么 |
+|--------|-------------|---------|
+| DataLoader 创建 | `train/dataloader.py:64-163` `create_train_val_loaders()` | 创建 train/val 两个 DataLoader，配置 `ArrowDataset`、batch sampler、collate fn |
+| 采样调度 | `train/distributed_batch_sampler.py` `MultipackDistributedBatchSamplerV2` | 按样本长度多包打包，凑满 `total_seq_len=8192` 一批，跨 DP rank 分配 |
+| **加载/生成隐状态** | `train/data.py:351-398` `ArrowDataset._get_raw_data()` | 查本地缓存 `.safetensors`；若缺失且 `on_missing=generate`，调 vLLM 让 Qwen3-8B 跑前向返回第 2/18/33 层+最后一层隐状态 |
+| 拆分数据 | 同上 `:389-398` | 3 层隐状态拼接成 `hidden_states [seq, 3*H]`，最后一层单独成 `verifier_last_hidden_states [seq, H]`，取 `input_ids`、`loss_mask` |
+| 加噪声 | `train/noise_transforms.py:23-25` `AddUniformNoise.transform()` | `hidden_states += 2*(rand-0.5)*0.05`，增强鲁棒性 |
+| 补字段 | `train/data.py:175-215` `BaseDataset.__getitem__()` | 加 `position_ids`、`lengths`，转 bf16 dtype |
+| 拼批 | `train/data.py:498-562` `create_collate_fn()` | 多样本沿 seq 维拼接，pad 到 8192，生成 `document_ids`（标记每个位置属于哪篇文档，padding 位为 -1） |
+| **送到 GPU** | `train/trainer.py:423-428` `train_epoch()` | `gpu_batch = {k: v.to(local_rank, non_blocking=True) for ...}` |
+
+**输出 batch dict**：
+```
+{
+  "hidden_states":                  [1, 8192, 3*hidden_size],   ← verifier 第2/18/33层拼接
+  "input_ids":                      [1, 8192],                   ← token ids
+  "verifier_last_hidden_states":    [1, 8192, hidden_size],      ← verifier 最后一层
+  "loss_mask":                      [1, 8192],                   ← 哪些是 assistant token
+  "document_ids":                   [1, 8192],                   ← 文档边界标记
+  "position_ids":                   [1, 8192],                   ← 位置编码
+}
+```
+
+---
+
+### 2. 前向传播
+
+| 子步骤 | 文件:方法:行号 | 干了什么 |
+|--------|-------------|---------|
+| **调用入口** | `train/trainer.py:431-433` `train_epoch()` | `self.model(**gpu_batch, **train_call_kwargs)` |
+| 模型 forward | `models/dflash/core.py:424-461` `DFlashDraftModel.forward()` | 总入口，调用 `_backbone_forward` 后算 loss |
+| 选 anchor | `models/dflash/core.py:291-319` `_build_attention_mask()` | `select_anchors(loss_mask, max_anchors=32, block_size=8)` 选 32 个锚点位置 |
+| 构建注意力 mask | `models/dflash/core.py:263-288` `_create_attention_mask()` | eager 模式用 `create_float_mask`（纯 broadcasting）生成 `[1,1,Q,KV]` float mask |
+| **构造 mask token 嵌入** | `models/dflash/core.py:350-359` | 每个 anchor 生成 `block_size=8` 个 query token，首位放真实 token，其余为 mask token，过 `embed_tokens` 得 `noise_embedding [1, 256, H]` |
+| FC 投影 | `models/dflash/core.py:362-363` | `fc_output = hidden_norm(fc(hidden_states))`，把 3 层拼接隐状态投影到 `H` 维 |
+| **算 verifier target（冻结）** | `models/dflash/core.py:380-389` | `verifier_logits = verifier_lm_head(verifier_norm(verifier_last_hidden))` → 取 anchor 对应位 = **标准答案 target logits**（`@torch.no_grad`） |
+| **逐层 forward（5 层）** | `models/dflash/core.py:391-402` | `for layer in self.layers:` 每层调 `Qwen3DFlashDecoderLayer.forward` |
+| └ 层前向 | `models/dflash/model_definitions.py:170-207` `Qwen3DFlashDecoderLayer.forward()` | input_layernorm → attention → residual → post_layernorm → mlp → residual |
+| └ 注意力前向 | `models/dflash/model_definitions.py:97-155` `Qwen3DFlashAttention.forward()` | **核心**：`k = cat[k_proj(verifier隐状态), k_proj(noise)]`，把 verifier 的 KV 注入 draft 的注意力 cache；eager 模式用 `eager_attention_forward` |
+| norm + lm_head | `models/dflash/core.py:404-405` | `logits = lm_head(norm(noise_embedding))` → **draft logits** `[1, 256, draft_vocab]` |
+| 对齐 loss mask | `models/dflash/core.py:408-420` | 取 anchor 对应位，清零 padding，mask 掉每 block 第 0 位（anchor 本身不训） |
+
+**前向输出**：`logits`（draft 预测）、`targets`（verifier 标准答案）、`aligned_loss_mask`
+
+---
+
+### 3. 计算损失
+
+| 子步骤 | 文件:方法:行号 | 干了什么 |
+|--------|-------------|---------|
+| **调用入口** | `models/dflash/core.py:450-460` `DFlashDraftModel.forward()` 内 | `loss, metrics = compute_metrics(logits, targets, aligned_loss_mask, ...)` |
+| loss 计算 | `models/dflash/metrics.py:20-106` `compute_metrics()` | 计算损失和指标 |
+| └ 位置衰减权重 | `models/metrics.py` `dflash_loss_decay(gamma=4.0)` | 按 block 内位置做指数衰减 `e^{-gamma*i/block_size}`，越靠后惩罚越大 |
+| └ 主损失 | `models/metrics.py` `compound_loss(loss_config)` | KL-divergence：`KL(softmax(draft_logits) ‖ softmax(target_logits))`，draft 学习模仿 verifier 的分布 |
+| └ 指标计算 | `models/metrics.py` `compute_accuracy_multi_step()` | full_acc / position_0_acc / position_1_acc / EAL（期望接受长度） |
+
+**损失本质**：知识蒸馏。draft logits 逼近 verifier target logits，不是传统的 label CE loss。
+
+---
+
+### 4. 反向传播（梯度计算）
+
+| 子步骤 | 文件:方法:行号 | 干了什么 |
+|--------|-------------|---------|
+| 清梯度 | `train/trainer.py:436` `_optimizers_zero_grad()` → `trainer.py:349-351` | 对 Muon + AdamW 两个优化器都 `zero_grad()` |
+| **反向传播** | `train/trainer.py:437` | `loss.backward()` — 自动微分，梯度从 loss 流回 draft 的可训练参数；verifier 冻结权重（`embed_tokens`/`lm_head`/`verifier_lm_head`/`verifier_norm`）不计算梯度 |
+| 梯度裁剪 | `train/trainer.py:438` | `clip_grad_norm_(model.parameters(), 1.0)` — 防梯度爆炸 |
+| FSDP 梯度同步（分布式时） | `torch/distributed/fsdp/` 内部 | FSDP2 在 backward hook 中自动 reduce-scatter 梯度到各 rank（单卡时无此步） |
+
+**只更新 draft 参数**，冻结的 verifier 权重（`requires_grad=False`）不参与反向传播。
+
+---
+
+### 5. 参数更新
+
+| 子步骤 | 文件:方法:行号 | 干了什么 |
+|--------|-------------|---------|
+| **优化器 step** | `train/trainer.py:441` `_optimizers_step()` → `trainer.py:353-355` | Muon + AdamW 两个优化器都 `step()` |
+| └ Muon 更新 | `train/optimizers.py:57-106` `build_optimizers()` → `torch.optim.Muon` | 对 2D 权重矩阵（q/k/v/o_proj、fc 等的 weight）做 Newton-Schulz 正交化更新 |
+| └ AdamW 更新 | 同上 → `torch.optim.AdamW` | 对 1D 参数（norm、bias）和 embed/lm_head 做标准 AdamW 更新 |
+| LR 调度 | `train/trainer.py:446` `_schedulers_step()` → `trainer.py:357-359` | linear warmup + decay，每个优化器各一个 scheduler |
+| 指标记录 | `train/trainer.py:450-475` | 分布式 `dist.reduce` 汇总指标，记录 train loss / lr / accuracy / EAL |
+| Checkpoint | `train/trainer.py:478-485` → `maybe_save_checkpoint()` → `trainer.py:530-560` | 按 `checkpoint_freq` 保存模型权重 + 优化器状态 + scheduler 状态 |
+
+---
+
+### 全流程一图对照
+
+```
+trainer.py:417  for batch in train_loader:
+                   │
+    ①  数据加载     │  trainer.py:423  gpu_batch = {k: v.to(local_rank)...}
+                   │  （ArrowDataset.__getitem__ → vLLM生成隐状态 → 加噪声 → collate拼批）
+                   ▼
+    ②  前向传播     │  trainer.py:431  loss, metrics = self.model(**gpu_batch, **train_call_kwargs)
+                   │  （DFlashDraftModel.forward → _backbone_forward → 5层DFlash decoder → draft logits）
+                   │  （verifier_lm_head算target logits ← 冻结，不训）
+                   ▼
+    ③  计算损失     │  core.py:450  loss = compute_metrics(draft_logits, target_logits, ...)
+                   │  （KL-div + gamma衰减加权）
+                   ▼
+    ④  反向传播     │  trainer.py:436  optimizers.zero_grad()
+                   │  trainer.py:437  loss.backward()      ← 只更新draft参数
+                   │  trainer.py:438  clip_grad_norm_(1.0)
+                   ▼
+    ⑤  参数更新     │  trainer.py:441  optimizers.step()    ← Muon(2D权重) + AdamW(其余)
+                   │  trainer.py:446  schedulers.step()    ← linear warmup+decay
+                   │  trainer.py:476  global_step += 1
+                   │  trainer.py:478  maybe_save_checkpoint()
+                   ▼
+                下一个 batch
+```
+
+### 与常规训练的关键差异
+
+| 对比项 | 常规训练 | DFlash 训练 |
+|--------|---------|-------------|
+| 数据来源 | 静态数据集 | **在线从 vLLM（verifier）生成隐状态** |
+| Loss 目标 | hard label（token id） | **verifier 的 logits 分布（知识蒸馏）** |
+| 冻结权重 | 通常无 | embed_tokens / lm_head / verifier_lm_head / verifier_norm **全冻结** |
+| 优化器 | 单一 AdamW | **Muon（2D权重）+ AdamW（其余）混合** |
+| 前向中算 target | 无 | **用冻结的 verifier 权重算 target logits**（`core.py:380-389`） |
+
+
+-----------------------------------------------------------------------------------------------------
+
 # DFlash 模型训练调用链流程图
 
 下面按**执行顺序**给出完整调用链，每一步标注 `文件:方法:行号` 并用中文说明作用。
