@@ -1,0 +1,12 @@
+// 修改前：无校验，直接读
+uint64_t stateOffset = idInBlockTable * stateCacheStrideDim0 + ...;
+DataCopyAlignGmToUb(output[...], state[stateOffset], ...);
+
+// 修改后：校验 + 安全降级
+if (idInBlockTable != 0 && idInBlockTable < constInfo_.blockNum) {
+    // 有效 block：正常读 state_cache
+    DataCopyAlignGmToUb(output[...], state[stateOffset], ...);
+} else {
+    // 无效 block（未分配=0 或 越界）：用 0 填充 output
+    Duplicate(output[...], FLOAT_ZERO, ...);
+}
