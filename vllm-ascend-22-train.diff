@@ -433,10 +433,10 @@ index 510af15..5edfe72 100644
  vllm.v1.core.kv_cache_utils._get_kv_cache_groups_uniform_groups = _get_kv_cache_groups_uniform_groups
  
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
-index 6e438f1..46af1f7 100644
+index 6e438f1..65e7ad2 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
 +++ b/vllm_ascend/worker/model_runner_v1.py
-@@ -2247,7 +2247,30 @@ class NPUModelRunner(GPUModelRunner):
+@@ -2247,7 +2247,13 @@ class NPUModelRunner(GPUModelRunner):
          with record_function_or_nullcontext("post process"):
              aux_hidden_states = None
              if self.use_aux_hidden_state_outputs:
@@ -445,38 +445,39 @@ index 6e438f1..46af1f7 100644
 +                # plain tensor (when aux capture is disabled).
 +                if isinstance(hidden_states, (tuple, list)):
 +                    hidden_states, aux_hidden_states = hidden_states
-+                # Debug: log aux_hidden_states count (runs outside graph capture)
-+                if aux_hidden_states is not None:
-+                    import logging as _logging
-+
-+                    _logger = _logging.getLogger(__name__)
-+                    _expected = len(
-+                        getattr(
-+                            self.vllm_config.speculative_config.draft_model_config.hf_config,
-+                            "eagle_aux_hidden_state_layer_ids",
-+                            [],
-+                        )
-+                    )
-+                    if len(aux_hidden_states) != _expected:
-+                        _logger.warning(
-+                            "aux_hidden_states count mismatch: got %d, expected %d. "
-+                            "Check if set_aux_hidden_state_layers was called correctly "
-+                            "and if ACL graph capture preserved the attribute.",
-+                            len(aux_hidden_states),
-+                            _expected,
-+                        )
++                    print(f"[DEBUG] aux_hidden_states count: {len(aux_hidden_states) if aux_hidden_states else 0}", flush=True)
++                else:
++                    print(f"[DEBUG] model returned non-tuple: {type(hidden_states)}, use_aux={self.use_aux_hidden_state_outputs}", flush=True)
              if self.pcp_size > 1:
                  # NOTE we must `slice` hidden_states because pcp_allgather_restore_idx
                  # ignores the padding from CUDA Graph.
-@@ -3625,6 +3648,11 @@ class NPUModelRunner(GPUModelRunner):
+@@ -3600,6 +3606,13 @@ class NPUModelRunner(GPUModelRunner):
+                 from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
+                 DefaultModelLoader._init_ep_weight_filter = mock_pass
+             self.model: nn.Module = get_model(vllm_config=self.vllm_config)
++            print(f"[DEBUG] Model type: {type(self.model).__name__}", flush=True)
++            print(f"[DEBUG] Model module: {type(self.model).__module__}", flush=True)
++            if hasattr(self.model, 'model'):
++                print(f"[DEBUG] Inner model type: {type(self.model.model).__name__}", flush=True)
++                print(f"[DEBUG] Inner model has aux_hidden_state_layers: {hasattr(self.model.model, 'aux_hidden_state_layers')}", flush=True)
++                if hasattr(self.model.model, 'aux_hidden_state_layers'):
++                    print(f"[DEBUG] aux_hidden_state_layers value: {getattr(self.model.model, 'aux_hidden_state_layers', 'NOT SET')}", flush=True)
+             for name, _ in self.model.named_parameters():
+                 # sinks is a kind of parameter in attention
+                 # only set in weight name
+@@ -3625,7 +3638,15 @@ class NPUModelRunner(GPUModelRunner):
                      aux_layers = self._get_eagle3_aux_layers_from_config()
                      if not aux_layers:
                          aux_layers = self.model.get_eagle3_default_aux_hidden_state_layers()
-+                    logger.info(
-+                        "Setting aux_hidden_state_layers=%s (count=%d)",
-+                        aux_layers,
-+                        len(aux_layers),
-+                    )
++                    print(f"[DEBUG] aux_layers from config: {aux_layers} (count={len(aux_layers)})", flush=True)
                      self.model.set_aux_hidden_state_layers(aux_layers)
++                    # Verify it was set
++                    if hasattr(self.model, 'model') and hasattr(self.model.model, 'aux_hidden_state_layers'):
++                        actual = getattr(self.model.model, 'aux_hidden_state_layers', 'NOT SET')
++                        print(f"[DEBUG] After set_aux, model.model.aux_hidden_state_layers = {actual}", flush=True)
++                    elif hasattr(self.model, 'aux_hidden_state_layers'):
++                        actual = getattr(self.model, 'aux_hidden_state_layers', 'NOT SET')
++                        print(f"[DEBUG] After set_aux, model.aux_hidden_state_layers = {actual}", flush=True)
  
              if self.lora_config:
+                 self.model = self.load_lora_model(self.model, self.vllm_config, self.device)
