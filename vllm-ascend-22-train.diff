@@ -1,0 +1,312 @@
+diff --git a/vllm_ascend/distributed/kv_transfer/__init__.py b/vllm_ascend/distributed/kv_transfer/__init__.py
+index e0beaad..09f560e 100644
+--- a/vllm_ascend/distributed/kv_transfer/__init__.py
++++ b/vllm_ascend/distributed/kv_transfer/__init__.py
+@@ -79,3 +79,15 @@ def register_connector():
+             "vllm_ascend.distributed.kv_transfer.kv_pool.simple_cpu_offload.simple_cpu_offload_connector",  # noqa: E501
+             "AscendSimpleCPUOffloadConnector",
+         )
++
++    # Override the upstream ExampleHiddenStatesConnector with the NPU
++    # adaptation that uses torch.npu streams/events for async D-to-H copies.
++    # This connector is required by the speculators training-data generation
++    # pipeline (extract_hidden_states spec-decode method).
++    if "ExampleHiddenStatesConnector" in KVConnectorFactory._registry:
++        KVConnectorFactory._registry.pop("ExampleHiddenStatesConnector")
++    KVConnectorFactory.register_connector(
++        "ExampleHiddenStatesConnector",
++        "vllm_ascend.distributed.kv_transfer.kv_p2p.example_hidden_states_connector",  # noqa: E501
++        "AscendExampleHiddenStatesConnector",
++    )
+diff --git a/vllm_ascend/models/deepseek_v4.py b/vllm_ascend/models/deepseek_v4.py
+index f516c35..db1d44a 100644
+--- a/vllm_ascend/models/deepseek_v4.py
++++ b/vllm_ascend/models/deepseek_v4.py
+@@ -56,7 +56,14 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
+ from vllm.model_executor.layers.quantization import QuantizationConfig
+ from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+ from vllm.model_executor.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
+-from vllm.model_executor.models.interfaces import MixtureOfExperts, SupportsEagle, SupportsLoRA, SupportsPP
++from vllm.model_executor.models.interfaces import (
++    EagleModelMixin,
++    MixtureOfExperts,
++    SupportsEagle,
++    SupportsEagle3,
++    SupportsLoRA,
++    SupportsPP,
++)
+ from vllm.model_executor.models.utils import (
+     PPMissingLayer,
+     is_pp_missing_parameter,
+@@ -994,7 +1001,7 @@ class DeepseekV2DecoderLayer(nn.Module):
+ 
+ 
+ @support_torch_compile
+-class DeepseekV4Model(nn.Module):
++class DeepseekV4Model(nn.Module, EagleModelMixin):
+     fall_back_to_pt_during_load = False
+ 
+     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+@@ -1007,6 +1014,7 @@ class DeepseekV4Model(nn.Module):
+ 
+         self.vocab_size = config.vocab_size
+         self.is_v32 = hasattr(config, "index_topk")
++        self.aux_hidden_state_layers: tuple[int, ...] = ()
+         if self.is_v32:
+             topk_tokens = config.index_topk
+             topk_indices_buffer = torch.empty(
+@@ -1122,7 +1130,24 @@ class DeepseekV4Model(nn.Module):
+ 
+         if get_pp_group().is_first_rank:
+             hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
+-        for layer in islice(self.layers, self.start_layer, self.end_layer):
++
++        aux_hidden_states: list[torch.Tensor] = []
++        for idx, layer in enumerate(
++            islice(self.layers, self.start_layer, self.end_layer),
++            start=self.start_layer,
++        ):
++            if idx in self.aux_hidden_state_layers:
++                # hidden_states is (num_tokens, hc_mult, hidden_size).
++                # Apply hc_head to reduce the hc_mult dimension, producing
++                # (num_tokens, hidden_size) for the draft model's FC projection.
++                aux_hidden_states.append(
++                    self.hc_head(
++                        hidden_states,
++                        self.hc_head_fn,
++                        self.hc_head_scale,
++                        self.hc_head_base,
++                    )
++                )
+             hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
+ 
+         # Stash pre-hc_head residual for the MTP draft (captured copy_).
+@@ -1156,6 +1181,8 @@ class DeepseekV4Model(nn.Module):
+         hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
+ 
+         hidden_states = self.norm(hidden_states)
++        if len(aux_hidden_states) > 0:
++            return hidden_states, aux_hidden_states
+         return hidden_states
+ 
+ 
+@@ -1199,7 +1226,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+             moe.experts.update_expert_map()
+ 
+ 
+-class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle):
++class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts, SupportsLoRA, SupportsEagle, SupportsEagle3):
+     packed_modules_mapping = {
+         "gate_up_proj": ["gate_proj", "up_proj"],
+     }
+@@ -1249,6 +1276,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
+ 
+         self.extract_moe_parameters(example_moe)
+ 
++    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
++        self.model.aux_hidden_state_layers = layers
++
++    def get_eagle3_aux_hidden_state_layers(self) -> tuple[int, ...]:
++        num_layers = len(self.model.layers)
++        return (2, num_layers // 2, num_layers - 3)
++
+     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+         return self.model.embed_input_ids(input_ids)
+ 
+diff --git a/vllm_ascend/patch/platform/patch_kv_cache_utils.py b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
+index 510af15..e20053c 100644
+--- a/vllm_ascend/patch/platform/patch_kv_cache_utils.py
++++ b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
+@@ -2,12 +2,15 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Ascend project
+ import math
+ from collections import defaultdict
++from typing import cast
+ 
+ import vllm.v1.core.kv_cache_utils
+ from vllm.config import VllmConfig
+ from vllm.utils.math_utils import cdiv, round_up
++from vllm.utils.torch_utils import get_dtype_size
+ from vllm.v1.core.kv_cache_utils import _approximate_gcd, may_override_num_blocks
+ from vllm.v1.kv_cache_interface import (
++    HiddenStateCacheSpec,
+     KVCacheConfig,
+     KVCacheGroupSpec,
+     KVCacheSpec,
+@@ -16,6 +19,7 @@ from vllm.v1.kv_cache_interface import (
+     SlidingWindowMLASpec,
+     UniformTypeKVCacheSpecs,
+ )
++from dataclasses import replace
+ 
+ _orig_resolve_kv_cache_block_sizes = vllm.v1.core.kv_cache_utils.resolve_kv_cache_block_sizes
+ 
+@@ -73,6 +77,10 @@ def group_and_unify_kv_cache_specs(
+     for name, spec in kv_cache_spec.items():
+         if isinstance(spec, SlidingWindowMLASpec):
+             grouped_swa_mla_specs[spec.block_size][name] = spec
++        elif isinstance(spec, HiddenStateCacheSpec):
++            # Skip HiddenStateCacheSpec layers — they are handled separately
++            # by _ascend_get_kv_cache_groups (pulled out before grouping).
++            continue
+         elif isinstance(spec, MLAAttentionSpec):
+             ratio_specs[spec.compress_ratio][name] = spec
+ 
+@@ -247,8 +255,157 @@ def _get_kv_cache_config_deepseek_v4(
+     return num_blocks, kv_cache_tensors
+ 
+ 
++# ---------------------------------------------------------------------------
++# Patch get_kv_cache_groups to pull out HiddenStateCacheSpec layers BEFORE
++# the DeepSeek-V4 grouping path (group_and_unify_kv_cache_specs). Without
++# this, HiddenStateCacheSpec (a subclass of MLAAttentionSpec) gets mixed
++# into the MLA group, causing block_size mismatches and assertion failures.
++# ---------------------------------------------------------------------------
++
++_orig_get_kv_cache_groups = vllm.v1.core.kv_cache_utils.get_kv_cache_groups
++
++
++def _ascend_get_kv_cache_groups(
++    vllm_config: VllmConfig,
++    kv_cache_spec: dict[str, KVCacheSpec],
++) -> list[KVCacheGroupSpec]:
++    # Pull HiddenStateCacheSpec layers out before any grouping logic.
++    hidden_specs = {
++        k: v for k, v in kv_cache_spec.items() if isinstance(v, HiddenStateCacheSpec)
++    }
++    filtered_spec = {
++        k: v for k, v in kv_cache_spec.items() if not isinstance(v, HiddenStateCacheSpec)
++    }
++
++    groups = _orig_get_kv_cache_groups(vllm_config, filtered_spec)
++
++    # Add hidden-state layers back as standalone groups. Unlike the upstream
++    # pull-out code which tries to align to a "common page" (broken for
++    # DeepSeek-V4 where each UniformTypeKVCacheSpecs group has a different
++    # page_size_bytes sum), we keep the HiddenStateCacheSpec's own page size
++    # and let _ascend_get_kv_cache_config_deepseek_v4 allocate a separate
++    # cache tensor for it (same pattern as MTP layers).
++    for name, spec in hidden_specs.items():
++        groups.append(KVCacheGroupSpec([name], spec))
++
++    return groups
++
++
++# ---------------------------------------------------------------------------
++# Patch _pool_bytes_per_block to handle the mixed case where DeepSeek-V4
++# UniformTypeKVCacheSpecs groups coexist with HiddenStateCacheSpec groups
++# (extract_hidden_states spec-decode method). Without this, the general-case
++# branch calls get_uniform_page_size which asserts all page sizes are equal,
++# but UniformTypeKVCacheSpecs groups have different sums and the
++# HiddenStateCacheSpec has its own page size.
++# ---------------------------------------------------------------------------
++
++_orig_pool_bytes_per_block = vllm.v1.core.kv_cache_utils._pool_bytes_per_block
++
++
++def _ascend_pool_bytes_per_block(kv_cache_groups: list[KVCacheGroupSpec]) -> int:
++    uniform_groups = [
++        g for g in kv_cache_groups
++        if isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
++    ]
++    non_uniform_groups = [
++        g for g in kv_cache_groups
++        if not isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
++    ]
++
++    if not non_uniform_groups:
++        return _orig_pool_bytes_per_block(kv_cache_groups)
++
++    bytes_per_block = 0
++    if uniform_groups:
++        # DeepSeek-V4 part: sum of page sizes * max layer tuples.
++        full_mla_spec = cast(
++            UniformTypeKVCacheSpecs, uniform_groups[0].kv_cache_spec
++        )
++        layer_tuple_page_bytes = sum(full_mla_spec.get_page_sizes())
++        num_layer_tuples = max(
++            cast(UniformTypeKVCacheSpecs, g.kv_cache_spec).get_num_layer_tuples()
++            for g in uniform_groups
++        )
++        bytes_per_block += layer_tuple_page_bytes * num_layer_tuples
++
++    # Add each non-uniform group's page size (HiddenStateCacheSpec, etc.).
++    for g in non_uniform_groups:
++        bytes_per_block += g.kv_cache_spec.page_size_bytes
++
++    return bytes_per_block
++
++
++# ---------------------------------------------------------------------------
++# Patch get_kv_cache_config_from_groups to route the mixed case
++# (UniformTypeKVCacheSpecs + HiddenStateCacheSpec) to the DeepSeek-V4
++# allocator instead of the general-case path which would crash.
++# ---------------------------------------------------------------------------
++
++_orig_get_kv_cache_config_from_groups = (
++    vllm.v1.core.kv_cache_utils.get_kv_cache_config_from_groups
++)
++
++
++def _ascend_get_kv_cache_config_from_groups(
++    vllm_config: VllmConfig,
++    kv_cache_groups: list[KVCacheGroupSpec],
++    available_memory: int,
++) -> "KVCacheConfig":
++    has_uniform = any(
++        isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs) for g in kv_cache_groups
++    )
++    has_non_uniform = any(
++        not isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs) for g in kv_cache_groups
++    )
++
++    if has_uniform and has_non_uniform:
++        # Mixed case: DeepSeek-V4 + HiddenStateCacheSpec.
++        # Separate the groups and delegate the uniform part to the
++        # DeepSeek-V4 allocator, then add non-uniform layers as separate
++        # cache tensors (same pattern as MTP layers).
++        uniform_groups = [
++            g for g in kv_cache_groups
++            if isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
++        ]
++        non_uniform_groups = [
++            g for g in kv_cache_groups
++            if not isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
++        ]
++
++        bytes_per_block = _ascend_pool_bytes_per_block(kv_cache_groups)
++        num_blocks = available_memory // bytes_per_block
++        num_blocks = may_override_num_blocks(vllm_config, num_blocks)
++
++        # Delegate uniform part to DeepSeek-V4 allocator.
++        num_blocks_u, kv_cache_tensors = _get_kv_cache_config_deepseek_v4(
++            vllm_config, uniform_groups, available_memory
++        )
++
++        # Add non-uniform layers as separate cache tensors.
++        for g in non_uniform_groups:
++            ps = g.kv_cache_spec.page_size_bytes
++            for name in g.layer_names:
++                kv_cache_tensors.append(
++                    KVCacheTensor(size=ps * num_blocks, shared_by=[name])
++                )
++
++        return KVCacheConfig(
++            num_blocks=num_blocks,
++            kv_cache_tensors=kv_cache_tensors,
++            kv_cache_groups=kv_cache_groups,
++        )
++
++    return _orig_get_kv_cache_config_from_groups(
++        vllm_config, kv_cache_groups, available_memory
++    )
++
++
+ vllm.v1.core.kv_cache_utils.resolve_kv_cache_block_sizes = _ascend_resolve_kv_cache_block_sizes
+ vllm.v1.core.kv_cache_utils.group_and_unify_kv_cache_specs = group_and_unify_kv_cache_specs
++vllm.v1.core.kv_cache_utils.get_kv_cache_groups = _ascend_get_kv_cache_groups
++vllm.v1.core.kv_cache_utils._pool_bytes_per_block = _ascend_pool_bytes_per_block
++vllm.v1.core.kv_cache_utils.get_kv_cache_config_from_groups = _ascend_get_kv_cache_config_from_groups
+ vllm.v1.core.kv_cache_utils._get_kv_cache_config_deepseek_v4 = _get_kv_cache_config_deepseek_v4
+ vllm.v1.core.kv_cache_utils._get_kv_cache_groups_uniform_groups = _get_kv_cache_groups_uniform_groups
+ 
