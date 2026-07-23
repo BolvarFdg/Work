@@ -114,7 +114,7 @@ index f516c35..db1d44a 100644
          return self.model.embed_input_ids(input_ids)
  
 diff --git a/vllm_ascend/patch/platform/patch_kv_cache_utils.py b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
-index 510af15..e20053c 100644
+index 510af15..43ba901 100644
 --- a/vllm_ascend/patch/platform/patch_kv_cache_utils.py
 +++ b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
 @@ -2,12 +2,15 @@
@@ -152,7 +152,7 @@ index 510af15..e20053c 100644
          elif isinstance(spec, MLAAttentionSpec):
              ratio_specs[spec.compress_ratio][name] = spec
  
-@@ -247,8 +255,157 @@ def _get_kv_cache_config_deepseek_v4(
+@@ -247,8 +255,220 @@ def _get_kv_cache_config_deepseek_v4(
      return num_blocks, kv_cache_tensors
  
  
@@ -302,11 +302,74 @@ index 510af15..e20053c 100644
 +    )
 +
 +
++# ---------------------------------------------------------------------------
++# Patch _max_memory_usage_bytes_from_groups to handle the mixed case
++# (UniformTypeKVCacheSpecs + HiddenStateCacheSpec). Without this, the general
++# case calls get_uniform_page_size which asserts all page sizes are equal.
++# This function is called by _check_enough_kv_cache_memory during startup.
++# ---------------------------------------------------------------------------
++
++_orig_max_memory_usage_bytes_from_groups = (
++    vllm.v1.core.kv_cache_utils._max_memory_usage_bytes_from_groups
++)
++
++
++def _ascend_max_memory_usage_bytes_from_groups(
++    vllm_config: VllmConfig,
++    kv_cache_groups: list[KVCacheGroupSpec],
++) -> int:
++    if not kv_cache_groups:
++        return 0
++
++    uniform_groups = [
++        g for g in kv_cache_groups
++        if isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
++    ]
++    non_uniform_groups = [
++        g for g in kv_cache_groups
++        if not isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
++    ]
++
++    if not non_uniform_groups:
++        # Pure uniform case — delegate to original.
++        return _orig_max_memory_usage_bytes_from_groups(
++            vllm_config, kv_cache_groups
++        )
++
++    total = 0
++
++    # Uniform part: use the DeepSeek-V4 layer-tuple calculation.
++    if uniform_groups:
++        full_mla_spec = cast(
++            UniformTypeKVCacheSpecs, uniform_groups[0].kv_cache_spec
++        )
++        layer_tuple_bytes = sum(full_mla_spec.get_page_sizes())
++        num_layer_tuples = max(
++            cast(UniformTypeKVCacheSpecs, g.kv_cache_spec).get_num_layer_tuples()
++            for g in uniform_groups
++        )
++        for group in uniform_groups:
++            group_spec = cast(UniformTypeKVCacheSpecs, group.kv_cache_spec)
++            g_max_mem_usage_pages = group_spec.max_memory_usage_pages(
++                vllm_config
++            )
++            total += (
++                num_layer_tuples * g_max_mem_usage_pages * layer_tuple_bytes
++            )
++
++    # Non-uniform part: each group computes its own max memory usage.
++    for group in non_uniform_groups:
++        total += group.kv_cache_spec.max_memory_usage_bytes(vllm_config)
++
++    return total
++
++
  vllm.v1.core.kv_cache_utils.resolve_kv_cache_block_sizes = _ascend_resolve_kv_cache_block_sizes
  vllm.v1.core.kv_cache_utils.group_and_unify_kv_cache_specs = group_and_unify_kv_cache_specs
 +vllm.v1.core.kv_cache_utils.get_kv_cache_groups = _ascend_get_kv_cache_groups
 +vllm.v1.core.kv_cache_utils._pool_bytes_per_block = _ascend_pool_bytes_per_block
 +vllm.v1.core.kv_cache_utils.get_kv_cache_config_from_groups = _ascend_get_kv_cache_config_from_groups
++vllm.v1.core.kv_cache_utils._max_memory_usage_bytes_from_groups = _ascend_max_memory_usage_bytes_from_groups
  vllm.v1.core.kv_cache_utils._get_kv_cache_config_deepseek_v4 = _get_kv_cache_config_deepseek_v4
  vllm.v1.core.kv_cache_utils._get_kv_cache_groups_uniform_groups = _get_kv_cache_groups_uniform_groups
  
