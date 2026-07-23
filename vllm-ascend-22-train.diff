@@ -114,7 +114,7 @@ index f516c35..db1d44a 100644
          return self.model.embed_input_ids(input_ids)
  
 diff --git a/vllm_ascend/patch/platform/patch_kv_cache_utils.py b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
-index 510af15..43ba901 100644
+index 510af15..5edfe72 100644
 --- a/vllm_ascend/patch/platform/patch_kv_cache_utils.py
 +++ b/vllm_ascend/patch/platform/patch_kv_cache_utils.py
 @@ -2,12 +2,15 @@
@@ -152,7 +152,7 @@ index 510af15..43ba901 100644
          elif isinstance(spec, MLAAttentionSpec):
              ratio_specs[spec.compress_ratio][name] = spec
  
-@@ -247,8 +255,220 @@ def _get_kv_cache_config_deepseek_v4(
+@@ -247,8 +255,227 @@ def _get_kv_cache_config_deepseek_v4(
      return num_blocks, kv_cache_tensors
  
  
@@ -262,9 +262,8 @@ index 510af15..43ba901 100644
 +
 +    if has_uniform and has_non_uniform:
 +        # Mixed case: DeepSeek-V4 + HiddenStateCacheSpec.
-+        # Separate the groups and delegate the uniform part to the
-+        # DeepSeek-V4 allocator, then add non-uniform layers as separate
-+        # cache tensors (same pattern as MTP layers).
++        # All tensors MUST share the same num_blocks so that downstream
++        # shrink-to-min-blocks (tensor.size % num_blocks == 0) passes.
 +        uniform_groups = [
 +            g for g in kv_cache_groups
 +            if isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
@@ -274,25 +273,33 @@ index 510af15..43ba901 100644
 +            if not isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
 +        ]
 +
++        # Compute global num_blocks from total bytes_per_block.
 +        bytes_per_block = _ascend_pool_bytes_per_block(kv_cache_groups)
 +        num_blocks = available_memory // bytes_per_block
 +        num_blocks = may_override_num_blocks(vllm_config, num_blocks)
 +
-+        # Delegate uniform part to DeepSeek-V4 allocator.
++        # Pass a fake available_memory to the DeepSeek-V4 allocator so it
++        # produces the SAME num_blocks for the uniform tensors.
++        # uniform_bytes_per_block = layer_tuple_page_bytes * num_layer_tuples
++        # So: fake_memory = num_blocks * uniform_bytes_per_block
++        #     num_blocks_internal = fake_memory // uniform_bytes_per_block = num_blocks
++        uniform_bytes_per_block = _ascend_pool_bytes_per_block(uniform_groups)
++        fake_memory = num_blocks * uniform_bytes_per_block
 +        num_blocks_u, kv_cache_tensors = _get_kv_cache_config_deepseek_v4(
-+            vllm_config, uniform_groups, available_memory
++            vllm_config, uniform_groups, fake_memory
 +        )
 +
-+        # Add non-uniform layers as separate cache tensors.
++        # Use num_blocks_u (from the allocator) for non-uniform tensors too,
++        # so every tensor.size is divisible by the same num_blocks value.
 +        for g in non_uniform_groups:
 +            ps = g.kv_cache_spec.page_size_bytes
 +            for name in g.layer_names:
 +                kv_cache_tensors.append(
-+                    KVCacheTensor(size=ps * num_blocks, shared_by=[name])
++                    KVCacheTensor(size=ps * num_blocks_u, shared_by=[name])
 +                )
 +
 +        return KVCacheConfig(
-+            num_blocks=num_blocks,
++            num_blocks=num_blocks_u,
 +            kv_cache_tensors=kv_cache_tensors,
 +            kv_cache_groups=kv_cache_groups,
 +        )
