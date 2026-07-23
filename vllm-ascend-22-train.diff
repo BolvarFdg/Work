@@ -19,7 +19,7 @@ index e0beaad..09f560e 100644
 +        "AscendExampleHiddenStatesConnector",
 +    )
 diff --git a/vllm_ascend/models/deepseek_v4.py b/vllm_ascend/models/deepseek_v4.py
-index f516c35..db1d44a 100644
+index f516c35..57a493f 100644
 --- a/vllm_ascend/models/deepseek_v4.py
 +++ b/vllm_ascend/models/deepseek_v4.py
 @@ -56,7 +56,14 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
@@ -55,13 +55,29 @@ index f516c35..db1d44a 100644
          if self.is_v32:
              topk_tokens = config.index_topk
              topk_indices_buffer = torch.empty(
-@@ -1122,7 +1130,24 @@ class DeepseekV4Model(nn.Module):
+@@ -1122,9 +1130,51 @@ class DeepseekV4Model(nn.Module):
  
          if get_pp_group().is_first_rank:
              hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
 -        for layer in islice(self.layers, self.start_layer, self.end_layer):
 +
 +        aux_hidden_states: list[torch.Tensor] = []
++        # Debug: log aux_hidden_state_layers configuration (first forward only)
++        _aux_debug_logged = getattr(self, "_aux_debug_logged", False)
++        if not _aux_debug_logged and self.aux_hidden_state_layers:
++            import logging
++
++            logging.getLogger(__name__).info(
++                "DFlash aux_hidden_state config: layers=%s, start_layer=%s, "
++                "end_layer=%s, total_layers=%d, hc_mult=%s",
++                self.aux_hidden_state_layers,
++                self.start_layer,
++                self.end_layer,
++                len(self.layers),
++                self.hc_mult,
++            )
++            self._aux_debug_logged = True
++
 +        for idx, layer in enumerate(
 +            islice(self.layers, self.start_layer, self.end_layer),
 +            start=self.start_layer,
@@ -80,8 +96,42 @@ index f516c35..db1d44a 100644
 +                )
              hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
  
++        if not _aux_debug_logged:
++            import logging
++
++            logging.getLogger(__name__).info(
++                "DFlash aux_hidden_state captured: %d hidden states (expected %d)",
++                len(aux_hidden_states),
++                len(self.aux_hidden_state_layers),
++            )
++
          # Stash pre-hc_head residual for the MTP draft (captured copy_).
-@@ -1156,6 +1181,8 @@ class DeepseekV4Model(nn.Module):
+         # When FlashComm1 (sequence parallelism) is enabled, tokens are
+         # partitioned across TP ranks via reduce_scatter in each layer's
+@@ -1147,15 +1197,30 @@ class DeepseekV4Model(nn.Module):
+             self._mtp_hidden_buffer[:num_tokens].copy_(hidden_states.flatten(1))
+ 
+         if not get_pp_group().is_last_rank:
+-            return IntermediateTensors(
++            it = IntermediateTensors(
+                 {
+                     "hidden_states": hidden_states,
+                 }
+             )
++            # Pass aux_hidden_states through intermediate tensors so the last
++            # PP rank can collect hidden states captured on all PP ranks.
++            # Stack into a single tensor for PP communication compatibility.
++            if len(aux_hidden_states) > 0:
++                it["aux_hidden_states"] = torch.stack(aux_hidden_states, dim=0)
++            return it
++
++        # Collect aux_hidden_states from previous PP ranks (if any).
++        if intermediate_tensors is not None and "aux_hidden_states" in intermediate_tensors:
++            prev_aux = intermediate_tensors["aux_hidden_states"]
++            # prev_aux is a stacked tensor [num_prev_aux, num_tokens, hidden_size]
++            prev_list = list(prev_aux.unbind(0))
++            aux_hidden_states = prev_list + aux_hidden_states
+ 
          hidden_states = self.hc_head(hidden_states, self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
  
          hidden_states = self.norm(hidden_states)
@@ -90,7 +140,7 @@ index f516c35..db1d44a 100644
          return hidden_states
  
  
-@@ -1199,7 +1226,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+@@ -1199,7 +1264,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
              moe.experts.update_expert_map()
  
  
@@ -99,7 +149,7 @@ index f516c35..db1d44a 100644
      packed_modules_mapping = {
          "gate_up_proj": ["gate_proj", "up_proj"],
      }
-@@ -1249,6 +1276,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
+@@ -1249,6 +1314,13 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
  
          self.extract_moe_parameters(example_moe)
  
