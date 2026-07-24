@@ -442,7 +442,7 @@ index 510af15..5edfe72 100644
  vllm.v1.core.kv_cache_utils._get_kv_cache_groups_uniform_groups = _get_kv_cache_groups_uniform_groups
  
 diff --git a/vllm_ascend/worker/model_runner_v1.py b/vllm_ascend/worker/model_runner_v1.py
-index 6e438f1..65e7ad2 100644
+index 6e438f1..8518830 100644
 --- a/vllm_ascend/worker/model_runner_v1.py
 +++ b/vllm_ascend/worker/model_runner_v1.py
 @@ -2247,7 +2247,13 @@ class NPUModelRunner(GPUModelRunner):
@@ -490,3 +490,24 @@ index 6e438f1..65e7ad2 100644
  
              if self.lora_config:
                  self.model = self.load_lora_model(self.model, self.vllm_config, self.device)
+@@ -3762,8 +3783,18 @@ class NPUModelRunner(GPUModelRunner):
+                         self.model_config.hf_text_config, name), name)):
+                 self.kv_caches.append(kv_caches[layer_name])
+             for layer_name, kv_cache in kv_caches.items():
+-                self.compilation_config.static_forward_context[
+-                    layer_name].kv_cache = [kv_cache]
++                # CacheOnlyAttentionLayer (extract_hidden_states) expects a
++                # single tensor, not a list. DeepSeek-V4's DSA attention
++                # layers expect a list. Check the layer type to decide.
++                from vllm.model_executor.models.extract_hidden_states import (
++                    CacheOnlyAttentionLayer,
++                )
++                fwd_ctx_entry = self.compilation_config.static_forward_context[
++                    layer_name]
++                if isinstance(fwd_ctx_entry, CacheOnlyAttentionLayer):
++                    fwd_ctx_entry.kv_cache = kv_cache
++                else:
++                    fwd_ctx_entry.kv_cache = [kv_cache]
+         else:
+             from vllm.v1.worker.utils import bind_kv_cache
+ 
