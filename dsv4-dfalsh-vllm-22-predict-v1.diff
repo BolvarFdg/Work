@@ -1,0 +1,71 @@
+diff --git a/vllm/model_executor/models/qwen3_dflash.py b/vllm/model_executor/models/qwen3_dflash.py
+index 231ed646e..b28667e52 100644
+--- a/vllm/model_executor/models/qwen3_dflash.py
++++ b/vllm/model_executor/models/qwen3_dflash.py
+@@ -446,14 +446,43 @@ class DFlashQwen3Model(nn.Module):
+ 
+         hidden_states = input_embeds
+ 
++        # [DBG] Track where hidden states become uniform across positions
++        if not hasattr(self, "_dbg_fwd_cnt"):
++            self._dbg_fwd_cnt = 0
++            from vllm.logger import init_logger as _il
++            self._dbg_logger = _il("qwen3_dflash.fwd")
++        if self._dbg_fwd_cnt < 3:
++            self._dbg_fwd_cnt += 1
++            _hs = hidden_states
++            _d = (_hs[0].float() - _hs[1].float()).abs().max().item() if _hs.shape[0] > 1 else -1
++            self._dbg_logger.warning(
++                "[DBG][fwd] embeddings shape=%s absmax=%.4f pos0_vs_pos1_diff=%.6f",
++                list(_hs.shape), _hs.abs().max().item(), _d,
++            )
++
+         residual = None
+-        for layer in self.layers:
++        for layer_idx, layer in enumerate(self.layers):
+             hidden_states, residual = layer(
+                 positions=positions,
+                 hidden_states=hidden_states,
+                 residual=residual,
+             )
++            if self._dbg_fwd_cnt <= 3:
++                _hs = hidden_states
++                _d = (_hs[0].float() - _hs[1].float()).abs().max().item() if _hs.shape[0] > 1 else -1
++                self._dbg_logger.warning(
++                    "[DBG][fwd] after_layer[%d] shape=%s absmax=%.4f diff=%.6f",
++                    layer_idx, list(_hs.shape), _hs.abs().max().item(), _d,
++                )
++
+         hidden_states, _ = self.norm(hidden_states, residual)
++        if self._dbg_fwd_cnt <= 3:
++            _hs = hidden_states
++            _d = (_hs[0].float() - _hs[1].float()).abs().max().item() if _hs.shape[0] > 1 else -1
++            self._dbg_logger.warning(
++                "[DBG][fwd] after_norm shape=%s absmax=%.4f diff=%.6f",
++                list(_hs.shape), _hs.abs().max().item(), _d,
++            )
+         return hidden_states
+ 
+     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+@@ -582,12 +611,21 @@ class DFlashQwen3ForCausalLM(Qwen3ForCausalLM):
+         self,
+         hidden_states: torch.Tensor,
+     ) -> torch.Tensor:
++        from vllm.logger import init_logger
++        _logger = init_logger("qwen3_dflash.combine")
+         if not self.model.use_aux_hidden_state:
++            _logger.warning("[DBG][combine] SKIP fc! use_aux=False input_shape=%s", list(hidden_states.shape))
+             return hidden_states
+         needs_squeeze = hidden_states.dim() == 1
+         if needs_squeeze:
+             hidden_states = hidden_states.unsqueeze(0)
++        _logger.warning(
++            "[DBG][combine] APPLY fc input_shape=%s fc_weight=%s",
++            list(hidden_states.shape),
++            list(self.model.fc.weight.shape) if hasattr(self.model, 'fc') else "NO_FC",
++        )
+         result = self.model.fc(hidden_states)
++        _logger.warning("[DBG][combine] fc output_shape=%s absmax=%.4f", list(result.shape), result.abs().max().item())
+         if needs_squeeze:
+             result = result.squeeze(0)
+         return result
