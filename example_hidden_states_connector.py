@@ -150,8 +150,5 @@ class AscendExampleHiddenStatesConnector(ExampleHiddenStatesConnector):
         num_tokens: int,
     ) -> torch.Tensor:
         """Extract hidden states from the KV cache for the given slots."""
-        from vllm.model_executor.models.extract_hidden_states import (
-            extract_from_kv_cache,
-        )
-
-        return extract_from_kv_cache(kv_layer, slot_mapping, num_tokens)
+        block_size = kv_layer.shape[1]
+        return kv_layer[slot_mapping // block_size, slot_mapping % block_size][:num_tokens]
