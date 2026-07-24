@@ -19,7 +19,7 @@ index e0beaad..09f560e 100644
 +        "AscendExampleHiddenStatesConnector",
 +    )
 diff --git a/vllm_ascend/models/deepseek_v4.py b/vllm_ascend/models/deepseek_v4.py
-index f516c35..5b9bf68 100644
+index f516c35..9472673 100644
 --- a/vllm_ascend/models/deepseek_v4.py
 +++ b/vllm_ascend/models/deepseek_v4.py
 @@ -56,7 +56,14 @@ from vllm.model_executor.layers.logits_processor import LogitsProcessor
@@ -55,7 +55,7 @@ index f516c35..5b9bf68 100644
          if self.is_v32:
              topk_tokens = config.index_topk
              topk_indices_buffer = torch.empty(
-@@ -1078,6 +1086,30 @@ class DeepseekV4Model(nn.Module):
+@@ -1078,6 +1086,31 @@ class DeepseekV4Model(nn.Module):
              device=self.device,
          )
  
@@ -81,22 +81,27 @@ index f516c35..5b9bf68 100644
 +                value, self.hc_head_fn, self.hc_head_scale, self.hc_head_base
 +            )
 +            aux_hidden_states.append(reduced)
++            print(f"[AUX] captured layer {layer_idx}, total={len(aux_hidden_states)}, hs.shape={hidden_states.shape}, residual={'None' if residual is None else residual.shape}", flush=True)
 +        return aux_hidden_states
 +
      def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
          return self.embed_tokens(input_ids)
  
-@@ -1122,7 +1154,19 @@ class DeepseekV4Model(nn.Module):
+@@ -1122,9 +1155,27 @@ class DeepseekV4Model(nn.Module):
  
          if get_pp_group().is_first_rank:
              hidden_states = hidden_states.unsqueeze(1).repeat(1, self.hc_mult, 1)  # (b, s, h) -> (b, s, c, h)
 -        for layer in islice(self.layers, self.start_layer, self.end_layer):
 +
 +        aux_hidden_states: list[torch.Tensor] = []
++        _aux_first_iter = True
 +        for idx, layer in enumerate(
 +            islice(self.layers, self.start_layer, self.end_layer),
 +            start=self.start_layer,
 +        ):
++            if _aux_first_iter:
++                print(f"[AUX] forward loop: start_layer={self.start_layer}, end_layer={self.end_layer}, total_layers={len(self.layers)}, aux_layers={self.aux_hidden_state_layers}", flush=True)
++                _aux_first_iter = False
 +            # Use EagleModelMixin._maybe_add_hidden_state (overridden above)
 +            # so that ACL graph / torch.compile captures the method call
 +            # correctly. Inline `if idx in self.aux_hidden_state_layers`
@@ -106,8 +111,12 @@ index f516c35..5b9bf68 100644
 +            )
              hidden_states, residual = layer(positions, hidden_states, residual, llama_4_scaling)
  
++        print(f"[AUX] loop done: last_idx={idx}, captured={len(aux_hidden_states)}, expected={len(self.aux_hidden_state_layers)}", flush=True)
++
          # Stash pre-hc_head residual for the MTP draft (captured copy_).
-@@ -1147,15 +1191,30 @@ class DeepseekV4Model(nn.Module):
+         # When FlashComm1 (sequence parallelism) is enabled, tokens are
+         # partitioned across TP ranks via reduce_scatter in each layer's
+@@ -1147,15 +1198,30 @@ class DeepseekV4Model(nn.Module):
              self._mtp_hidden_buffer[:num_tokens].copy_(hidden_states.flatten(1))
  
          if not get_pp_group().is_last_rank:
@@ -139,7 +148,7 @@ index f516c35..5b9bf68 100644
          return hidden_states
  
  
-@@ -1199,7 +1258,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+@@ -1199,7 +1265,7 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
              moe.experts.update_expert_map()
  
  
@@ -148,7 +157,7 @@ index f516c35..5b9bf68 100644
      packed_modules_mapping = {
          "gate_up_proj": ["gate_proj", "up_proj"],
      }
-@@ -1249,6 +1308,16 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
+@@ -1249,6 +1315,16 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
  
          self.extract_moe_parameters(example_moe)
  
