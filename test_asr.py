@@ -1,27 +1,14 @@
-import requests
-import sys
-import json
+import re
+from collections import Counter
 
-def transcribe(server_url, audio_path, model_name="Qwen3-ASR-1.7B"):
-    url = f"{server_url}/v1/audio/transcriptions"
-    files = {"file": open(audio_path, "rb")}
-    data = {"model": model_name}
-
-    print(f"Sending audio: {audio_path}")
-    response = requests.post(url, files=files, data=data, timeout=300)
-    files["file"].close()
-
-    if response.status_code == 200:
-        result = response.json()
-        print(f"\nRecognition result:\n{result.get('text', result)}")
-        return result
-    else:
-        print(f"Error {response.status_code}: {response.text}")
-        return None
-
-if __name__ == "__main__":
-    server_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
-    audio_path = sys.argv[2] if len(sys.argv) > 2 else "test.wav"
-    model = sys.argv[3] if len(sys.argv) > 3 else "Qwen3-ASR-1.7B"
-
-    transcribe(server_url, audio_path, model)
+def diff_words(sentence_a: str, sentence_b: str) -> list[str]:
+    """返回 A 中与 B 不同的单词（忽略大小写和标点，保留 A 的顺序和重复次数）"""
+    words_a = re.findall(r"[a-zA-Z']+", sentence_a.lower())
+    words_b = re.findall(r"[a-zA-Z']+", sentence_b.lower())
+    remaining = Counter(words_a) - Counter(words_b)  # 多集合差：A 减去 B
+    result = []
+    for w in words_a:
+        if remaining[w] > 0:
+            result.append(w)
+            remaining[w] -= 1
+    return result
