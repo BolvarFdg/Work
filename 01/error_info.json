@@ -1,0 +1,74 @@
+{
+    "error_list": [
+        {
+            "error_id": 1,
+            "original_text": "依托物联网、5G、大数据三大技术实现园区精细化管理",
+            "translated_text": "relying on the Internet of Things and big data to realize refined park management",
+            "error_type": "漏译",
+            "error_explanation": "原文包含三大技术：物联网、5G、大数据，译文遗漏关键技术“5G”，信息缺失"
+        },
+        {
+            "error_id": 2,
+            "original_text": "截至2025年上半年，国内已建成智慧园区项目共计2760个",
+            "translated_text": "By the first half of 2024, a total of 2160 smart park projects have been built in China",
+            "error_type": "数字错误",
+            "error_explanation": "原文时间2025上半年、数量2760个；译文错写为2024上半年、2160个，两处数字同时出错"
+        },
+        {
+            "error_id": 3,
+            "original_text": "智慧园区主要服务企业办公、安防监控、能耗管控、访客管理四大业务场景",
+            "translated_text": "Smart parks mainly serve four business scenarios: enterprise office, security monitoring and energy consumption control",
+            "error_type": "漏译",
+            "error_explanation": "四大业务场景，译文遗漏“访客管理”，场景信息缺失"
+        },
+        {
+            "error_id": 4,
+            "original_text": "安防模块支持视频AI识别、异常告警、人员轨迹回溯",
+            "translated_text": "The security module supports video AI recognition and abnormal alarms",
+            "error_type": "漏译",
+            "error_explanation": "译文遗漏安防能力“人员轨迹回溯”，丢失功能描述"
+        },
+        {
+            "error_id": 5,
+            "original_text": "能够及时识别翻越围墙、明火等安全风险",
+            "translated_text": "which can timely identify safety risks such as open fire",
+            "error_type": "漏译",
+            "error_explanation": "译文漏掉风险类型“翻越围墙”，安全风险描述不全"
+        },
+        {
+            "error_id": 6,
+            "original_text": "帮助园区降低18%左右的综合能耗",
+            "translated_text": "helping parks reduce comprehensive energy consumption by about 35%",
+            "error_type": "数字错误",
+            "error_explanation": "原文节能18%，译文错误改写为35%，关键指标数字错误"
+        },
+        {
+            "error_id": 7,
+            "original_text": "硬件设备品牌繁多，不同厂商设备协议不兼容，造成数据孤岛现象",
+            "translated_text": "Hardware equipment comes from few brands, and equipment protocols from different manufacturers are compatible, eliminating data silos",
+            "error_type": "逻辑错译",
+            "error_explanation": "原文品牌多、协议不兼容、产生数据孤岛；译文全部反向：品牌少、协议兼容、消除数据孤岛，语义完全颠倒"
+        },
+        {
+            "error_id": 8,
+            "original_text": "部分中小园区预算有限，难以承担全套智能化改造费用",
+            "translated_text": "Some small and medium‑sized parks have sufficient budget and can afford full‑set intelligent renovation costs",
+            "error_type": "逻辑错译",
+            "error_explanation": "原文预算有限承担不起，译文翻译成预算充足可以承担，语义相反"
+        },
+        {
+            "error_id": 9,
+            "original_text": "同时运维人才缺口较大，设备故障不能得到及时处理",
+            "translated_text": "Meanwhile, operation‑maintenance talents are abundant, and equipment faults can be dealt with immediately",
+            "error_type": "逻辑错译",
+            "error_explanation": "原文人才缺口大、故障难及时处理；译文译为人才充足、故障立刻处理，逻辑倒置"
+        },
+        {
+            "error_id": 10,
+            "original_text": "未来智慧园区将朝着软硬一体化方向演进",
+            "translated_text": "In the future, smart parks will evolve toward software‑only development",
+            "error_type": "关键词错译",
+            "error_explanation": "原文“软硬一体化”错译为仅软件(software‑only)，核心发展方向术语翻译错误"
+        }
+    ]
+}
