@@ -1,12 +1,8 @@
-# 1. HAS_TRITON 实际值
-python -c "from vllm.triton_utils import HAS_TRITON; print(HAS_TRITON)"
-
-# 2. 翻服务启动日志，找这行（如果有就是 driver 问题实锤）
-grep -i "triton" <启动日志>   # "Disabling Triton" / "N active driver(s)"
-
-# 3. 看 driver 激活状态
-python -c "
-from triton.backends import backends
-for name, b in backends.items():
-    print(name, 'driver_active =', b.driver.is_active() if b.driver else None)
-"
+import importlib.metadata as _md
+_orig_version = _md.version
+def _safe_version(name, *a, **kw):
+    try:
+        return _orig_version(name, *a, **kw)
+    except _md.PackageNotFoundError:
+        return "0.0.0"   # 视频分支的版本常量，音频链路永远用不到
+_md.version = _safe_version
