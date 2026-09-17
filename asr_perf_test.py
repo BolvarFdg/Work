@@ -32,7 +32,7 @@ LANGUAGE = "en"                                  # 语项 lang
 TOP_K = 10                                       # 检索 top_k
 DOMAINS = ["xxxx", "xxx"]                        # 检索域列表
 CONCURRENCIES = [1, 4, 8, 16, 32]                # 并发数数组，按顺序逐档测试
-TOTAL_REQUESTS = 100                             # 每个并发档位的总请求数
+TOTAL_REQUESTS = None                            # 每档总请求数；None=并发数×10（最少60），也可手动指定固定值
 WARMUP_REQUESTS = 3                              # 每档正式测试前的预热请求数（不计入统计）
 REQUEST_TIMEOUT = 300                            # 单请求超时（秒）
 LEVEL_COOLDOWN = 2.0                             # 两个并发档位之间的冷却时间（秒）
@@ -336,7 +336,14 @@ def main():
         print(f"并发档位: {conc}")
         print("=" * 88)
         do_warmup(audios)
-        task_b64s = [audios[i % len(audios)][1] for i in range(TOTAL_REQUESTS)]
+        # 每档总请求数: 手动指定则用固定值, 否则 = 并发数×10 且最少 60
+        level_requests = (
+            TOTAL_REQUESTS
+            if TOTAL_REQUESTS is not None
+            else max(60, conc * 10)
+        )
+        print(f"    本档总请求数: {level_requests}")
+        task_b64s = [audios[i % len(audios)][1] for i in range(level_requests)]
         results, wall_s = run_level(conc, task_b64s)
         summary = summarize(conc, results, wall_s)
         print_level_report(summary)
