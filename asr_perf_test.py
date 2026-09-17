@@ -40,6 +40,7 @@ SERVER_TIME_FIELD = "time"                       # 响应 json 中服务端总�
 ASR_TIME_FIELD = "asr_time"                      # 模型推理耗时字段名（分段）
 ENCODER_TIME_FIELD = "encoder_time"              # 编码(encoder)耗时字段名（分段）
 SERVER_TIME_IN_MS = True                         # 以上耗时单位为毫秒；若为秒改为 False
+RESULT_TEXT_FIELD = "src"                        # 响应 json 中识别文本字段名（保存进逐请求明细）
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".pcm"}   # 识别的音频后缀
 OUTPUT_FILE = "/data/asr_perf_result_{ts}.json"  # 结果保存路径，{ts} 自动替换为时间戳
 SAVE_RAW = True                                  # 结果文件中是否保存逐请求明细
@@ -88,6 +89,7 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
             "server_ms": None,
             "asr_ms": None,
             "encoder_ms": None,
+            "text": None,
             "error": f"{type(exc).__name__}: {exc}",
         }
     e2e_ms = round((time.perf_counter() - t0) * 1000, 2)
@@ -98,6 +100,7 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
             "server_ms": None,
             "asr_ms": None,
             "encoder_ms": None,
+            "text": None,
             "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
         }
     try:
@@ -109,11 +112,15 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
             "server_ms": None,
             "asr_ms": None,
             "encoder_ms": None,
+            "text": None,
             "error": "响应不是 JSON",
         }
     server_ms = extract_time_ms(rj, SERVER_TIME_FIELD)
     asr_ms = extract_time_ms(rj, ASR_TIME_FIELD)
     encoder_ms = extract_time_ms(rj, ENCODER_TIME_FIELD)
+    text = rj.get(RESULT_TEXT_FIELD)
+    if text is None and isinstance(rj.get("data"), dict):
+        text = rj["data"].get(RESULT_TEXT_FIELD)
     code = rj.get("code")
     if code not in (None, 0, 200):
         return {
@@ -122,6 +129,7 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
             "server_ms": server_ms,
             "asr_ms": asr_ms,
             "encoder_ms": encoder_ms,
+            "text": text,
             "error": f"业务错误 code={code}: {str(rj)[:200]}",
         }
     return {
@@ -130,6 +138,7 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
         "server_ms": server_ms,
         "asr_ms": asr_ms,
         "encoder_ms": encoder_ms,
+        "text": text,
         "error": None,
     }
 
