@@ -28,14 +28,18 @@ import requests
 # ==================== 配置区 ====================
 AUDIO_DIR = "/data/audio_files"                  # 音频文件夹路径
 URL = "http://127.0.0.1:8000/audio/retrieve"     # 服务接口地址
-LANGUAGE = "zh"                                  # 语项 lang
+LANGUAGE = "en"                                  # 语项 lang
+TOP_K = 10                                       # 检索 top_k
+DOMAINS = ["xxxx", "xxx"]                        # 检索域列表
 CONCURRENCIES = [1, 4, 8, 16, 32]                # 并发数数组，按顺序逐档测试
 TOTAL_REQUESTS = 100                             # 每个并发档位的总请求数
 WARMUP_REQUESTS = 3                              # 每档正式测试前的预热请求数（不计入统计）
 REQUEST_TIMEOUT = 300                            # 单请求超时（秒）
 LEVEL_COOLDOWN = 2.0                             # 两个并发档位之间的冷却时间（秒）
-SERVER_TIME_FIELD = "time"                       # 响应 json 中服务端耗时的字段名
-SERVER_TIME_IN_MS = True                         # 服务端耗时单位为毫秒；若为秒改为 False
+SERVER_TIME_FIELD = "time"                       # 响应 json 中服务端总耗时字段名
+ASR_TIME_FIELD = "asr_time"                      # 模型推理耗时字段名（分段）
+ENCODER_TIME_FIELD = "encoder_time"              # 编码(encoder)耗时字段名（分段）
+SERVER_TIME_IN_MS = True                         # 以上耗时单位为毫秒；若为秒改为 False
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".pcm"}   # 识别的音频后缀
 OUTPUT_FILE = "/data/asr_perf_result_{ts}.json"  # 结果保存路径，{ts} 自动替换为时间戳
 SAVE_RAW = True                                  # 结果文件中是否保存逐请求明细
@@ -55,15 +59,17 @@ def load_audios():
 def build_payload(audio_b64: str) -> dict:
     """构造请求体。字段名与服务接口不一致时，只需修改这里。"""
     return {
-        "audio": audio_b64,
+        "base64_audio": audio_b64,
+        "top_k": TOP_K,
+        "domain": DOMAINS,
         "lang": LANGUAGE,
     }
 
 
-def extract_server_time_ms(resp_json: dict):
-    val = resp_json.get(SERVER_TIME_FIELD)
+def extract_time_ms(resp_json: dict, field: str):
+    val = resp_json.get(field)
     if val is None and isinstance(resp_json.get("data"), dict):
-        val = resp_json["data"].get(SERVER_TIME_FIELD)
+        val = resp_json["data"].get(field)
     try:
         val = float(val)
     except (TypeError, ValueError):
@@ -80,6 +86,8 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
             "ok": False,
             "e2e_ms": round((time.perf_counter() - t0) * 1000, 2),
             "server_ms": None,
+            "asr_ms": None,
+            "encoder_ms": None,
             "error": f"{type(exc).__name__}: {exc}",
         }
     e2e_ms = round((time.perf_counter() - t0) * 1000, 2)
@@ -88,22 +96,42 @@ def send_one(session: requests.Session, audio_b64: str) -> dict:
             "ok": False,
             "e2e_ms": e2e_ms,
             "server_ms": None,
+            "asr_ms": None,
+            "encoder_ms": None,
             "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
         }
     try:
         rj = resp.json()
     except ValueError:
-        return {"ok": False, "e2e_ms": e2e_ms, "server_ms": None, "error": "响应不是 JSON"}
-    server_ms = extract_server_time_ms(rj)
+        return {
+            "ok": False,
+            "e2e_ms": e2e_ms,
+            "server_ms": None,
+            "asr_ms": None,
+            "encoder_ms": None,
+            "error": "响应不是 JSON",
+        }
+    server_ms = extract_time_ms(rj, SERVER_TIME_FIELD)
+    asr_ms = extract_time_ms(rj, ASR_TIME_FIELD)
+    encoder_ms = extract_time_ms(rj, ENCODER_TIME_FIELD)
     code = rj.get("code")
     if code not in (None, 0, 200):
         return {
             "ok": False,
             "e2e_ms": e2e_ms,
             "server_ms": server_ms,
+            "asr_ms": asr_ms,
+            "encoder_ms": encoder_ms,
             "error": f"业务错误 code={code}: {str(rj)[:200]}",
         }
-    return {"ok": True, "e2e_ms": e2e_ms, "server_ms": server_ms, "error": None}
+    return {
+        "ok": True,
+        "e2e_ms": e2e_ms,
+        "server_ms": server_ms,
+        "asr_ms": asr_ms,
+        "encoder_ms": encoder_ms,
+        "error": None,
+    }
 
 
 def percentile(sorted_vals: list, p: float) -> float:
@@ -184,11 +212,20 @@ def summarize(concurrency: int, results: list, wall_s: float) -> dict:
     ok = [r for r in results if r["ok"]]
     e2e = sorted(r["e2e_ms"] for r in ok)
     srv = sorted(r["server_ms"] for r in ok if r["server_ms"] is not None)
+    asr = sorted(r.get("asr_ms") for r in ok if r.get("asr_ms") is not None)
+    enc = sorted(r.get("encoder_ms") for r in ok if r.get("encoder_ms") is not None)
     e2e_stats = dist_stats(e2e)
     srv_stats = dist_stats(srv)
+    asr_stats = dist_stats(asr)
+    enc_stats = dist_stats(enc)
     net_avg = (
         round(e2e_stats["avg"] - srv_stats["avg"], 1)
         if e2e_stats and srv_stats
+        else None
+    )
+    other_avg = (
+        round(srv_stats["avg"] - asr_stats["avg"] - enc_stats["avg"], 1)
+        if srv_stats and asr_stats and enc_stats
         else None
     )
     errors = [r["error"] for r in results if not r["ok"]][:3]
@@ -201,6 +238,9 @@ def summarize(concurrency: int, results: list, wall_s: float) -> dict:
         "qps": round(len(ok) / wall_s, 2) if wall_s > 0 else 0.0,
         "e2e_ms": e2e_stats,
         "server_ms": srv_stats,
+        "asr_ms": asr_stats,
+        "encoder_ms": enc_stats,
+        "other_avg_ms": other_avg,
         "network_avg_ms": net_avg,
         "sample_errors": errors,
     }
@@ -218,37 +258,57 @@ def print_level_report(s: dict):
     if s["server_ms"]:
         v = s["server_ms"]
         print(
-            f"    服务端耗时:          avg={v['avg']}ms p50={v['p50']}ms "
+            f"    服务端总耗时(time): avg={v['avg']}ms p50={v['p50']}ms "
             f"p90={v['p90']}ms p95={v['p95']}ms"
         )
-        print(f"    网络开销(端到端-服务端): avg={s['network_avg_ms']}ms")
     else:
-        print("    服务端耗时: 响应中未找到 time 字段（检查 SERVER_TIME_FIELD 配置）")
+        print("    服务端总耗时: 响应中未找到 time 字段（检查 SERVER_TIME_FIELD 配置）")
+    if s["asr_ms"]:
+        a = s["asr_ms"]
+        print(
+            f"    模型耗时(asr_time): avg={a['avg']}ms p50={a['p50']}ms "
+            f"p90={a['p90']}ms p95={a['p95']}ms"
+        )
+    if s["encoder_ms"]:
+        c = s["encoder_ms"]
+        print(
+            f"    编码耗时(encoder_time): avg={c['avg']}ms p50={c['p50']}ms "
+            f"p90={c['p90']}ms p95={c['p95']}ms"
+        )
+    if s["other_avg_ms"] is not None:
+        print(f"    其他耗时(总-模型-编码, 如检索): avg={s['other_avg_ms']}ms")
+    if s["network_avg_ms"] is not None:
+        print(f"    网络开销(端到端-服务端): avg={s['network_avg_ms']}ms")
     for err in s["sample_errors"]:
         print(f"    失败示例: {err[:120]}")
 
 
 def print_final_table(all_levels: list):
-    print("\n" + "=" * 88)
+    print("\n" + "=" * 110)
     print("各并发档位汇总")
-    print("=" * 88)
+    print("=" * 110)
     header = (
         f"{'并发':>4} | {'成功率':>7} | {'QPS':>8} | "
-        f"{'端到端avg':>10} | {'端到端p95':>10} | {'服务端avg':>10} | {'网络avg':>8}"
+        f"{'端到端avg':>9} | {'端到端p95':>9} | {'服务端avg':>9} | "
+        f"{'模型avg':>8} | {'编码avg':>8} | {'其他avg':>8} | {'网络avg':>7}"
     )
     print(header)
-    print("-" * 88)
+    print("-" * 110)
     for s in all_levels:
         succ_rate = f"{s['success'] / s['total'] * 100:.1f}%" if s["total"] else "-"
         e_avg = s["e2e_ms"]["avg"] if s["e2e_ms"] else "-"
         e_p95 = s["e2e_ms"]["p95"] if s["e2e_ms"] else "-"
         s_avg = s["server_ms"]["avg"] if s["server_ms"] else "-"
+        a_avg = s["asr_ms"]["avg"] if s["asr_ms"] else "-"
+        c_avg = s["encoder_ms"]["avg"] if s["encoder_ms"] else "-"
+        o_avg = s["other_avg_ms"] if s["other_avg_ms"] is not None else "-"
         n_avg = s["network_avg_ms"] if s["network_avg_ms"] is not None else "-"
         print(
             f"{s['concurrency']:>4} | {succ_rate:>7} | {s['qps']:>8} | "
-            f"{e_avg:>10} | {e_p95:>10} | {s_avg:>10} | {n_avg:>8}"
+            f"{e_avg:>9} | {e_p95:>9} | {s_avg:>9} | "
+            f"{a_avg:>8} | {c_avg:>8} | {o_avg:>8} | {n_avg:>7}"
         )
-    print("=" * 88)
+    print("=" * 110)
 
 
 def main():
