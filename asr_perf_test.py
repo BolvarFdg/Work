@@ -266,17 +266,17 @@ def print_level_report(s: dict):
     if s["asr_ms"]:
         a = s["asr_ms"]
         print(
-            f"    模型耗时(asr_time): avg={a['avg']}ms p50={a['p50']}ms "
+            f"    decoder time(asr_time): avg={a['avg']}ms p50={a['p50']}ms "
             f"p90={a['p90']}ms p95={a['p95']}ms"
         )
     if s["encoder_ms"]:
         c = s["encoder_ms"]
         print(
-            f"    编码耗时(encoder_time): avg={c['avg']}ms p50={c['p50']}ms "
+            f"    encoder time(encoder_time): avg={c['avg']}ms p50={c['p50']}ms "
             f"p90={c['p90']}ms p95={c['p95']}ms"
         )
     if s["other_avg_ms"] is not None:
-        print(f"    其他耗时(总-模型-编码, 如检索): avg={s['other_avg_ms']}ms")
+        print(f"    其他耗时(总-decoder-encoder, 如检索): avg={s['other_avg_ms']}ms")
     if s["network_avg_ms"] is not None:
         print(f"    网络开销(端到端-服务端): avg={s['network_avg_ms']}ms")
     for err in s["sample_errors"]:
@@ -284,31 +284,29 @@ def print_level_report(s: dict):
 
 
 def print_final_table(all_levels: list):
-    print("\n" + "=" * 110)
+    print("\n" + "=" * 60)
     print("各并发档位汇总")
-    print("=" * 110)
-    header = (
-        f"{'并发':>4} | {'成功率':>7} | {'QPS':>8} | "
-        f"{'端到端avg':>9} | {'端到端p95':>9} | {'服务端avg':>9} | "
-        f"{'模型avg':>8} | {'编码avg':>8} | {'其他avg':>8} | {'网络avg':>7}"
-    )
-    print(header)
-    print("-" * 110)
+    print("=" * 60)
     for s in all_levels:
         succ_rate = f"{s['success'] / s['total'] * 100:.1f}%" if s["total"] else "-"
-        e_avg = s["e2e_ms"]["avg"] if s["e2e_ms"] else "-"
-        e_p95 = s["e2e_ms"]["p95"] if s["e2e_ms"] else "-"
-        s_avg = s["server_ms"]["avg"] if s["server_ms"] else "-"
-        a_avg = s["asr_ms"]["avg"] if s["asr_ms"] else "-"
-        c_avg = s["encoder_ms"]["avg"] if s["encoder_ms"] else "-"
-        o_avg = s["other_avg_ms"] if s["other_avg_ms"] is not None else "-"
-        n_avg = s["network_avg_ms"] if s["network_avg_ms"] is not None else "-"
-        print(
-            f"{s['concurrency']:>4} | {succ_rate:>7} | {s['qps']:>8} | "
-            f"{e_avg:>9} | {e_p95:>9} | {s_avg:>9} | "
-            f"{a_avg:>8} | {c_avg:>8} | {o_avg:>8} | {n_avg:>7}"
-        )
-    print("=" * 110)
+        print(f"\n[并发 {s['concurrency']}] 请求: {s['total']} | 成功率: {succ_rate} | "
+              f"QPS: {s['qps']} | 墙钟: {s['wall_s']}s")
+        if s["e2e_ms"]:
+            print(f"  端到端(含网络): avg={s['e2e_ms']['avg']}ms "
+                  f"p50={s['e2e_ms']['p50']}ms p95={s['e2e_ms']['p95']}ms")
+        if s["server_ms"]:
+            print(f"  服务端总耗时(time): avg={s['server_ms']['avg']}ms "
+                  f"p50={s['server_ms']['p50']}ms p95={s['server_ms']['p95']}ms")
+        if s["asr_ms"]:
+            print(f"  decoder time: avg={s['asr_ms']['avg']}ms "
+                  f"p50={s['asr_ms']['p50']}ms p95={s['asr_ms']['p95']}ms")
+        if s["encoder_ms"]:
+            print(f"  encoder time: avg={s['encoder_ms']['avg']}ms "
+                  f"p50={s['encoder_ms']['p50']}ms p95={s['encoder_ms']['p95']}ms")
+        if s["other_avg_ms"] is not None:
+            print(f"  其他耗时(总-decoder-encoder, 如检索): avg={s['other_avg_ms']}ms")
+        if s["network_avg_ms"] is not None:
+            print(f"  网络开销(端到端-服务端): avg={s['network_avg_ms']}ms")
 
 
 def main():
