@@ -27,7 +27,6 @@ import os
 import sys
 import io
 import time
-import base64
 import random
 import tempfile
 import threading
@@ -45,6 +44,7 @@ NUM_STEPS = 4              # Edit-Turbo DMD 步数
 DMD_SIGMA = 0.0            # Edit-Turbo 用 0.0;换纯文生图 Turbo 则改 0.001
 DEFAULT_WIDTH = 1024
 DEFAULT_HEIGHT = 1024
+LOG_LEVEL = "INFO"         # DEBUG / INFO / WARNING / ERROR
 # ====================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,6 +53,15 @@ os.environ["device"] = DEVICE
 os.environ.setdefault("HF_MODULES_CACHE", os.path.join(BASE_DIR, ".hf_modules_cache"))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+import logging
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("boogu_server")
 
 import torch
 import torch_npu  # noqa: F401  必须在 torch 之后导入
@@ -74,7 +83,7 @@ def load_pipeline() -> BooguImageTurboPipeline:
         raise FileNotFoundError(f"model_index.json not found under {model_path}")
 
     torch.npu.set_device(DEVICE)
-    print(f"[Server] Loading pipeline: {model_path} on {DEVICE} (offload={ENABLE_CPU_OFFLOAD})")
+    logger.info("Loading pipeline: %s on %s (cpu_offload=%s)", model_path, DEVICE, ENABLE_CPU_OFFLOAD)
     pipe = BooguImageTurboPipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
@@ -142,7 +151,7 @@ def image_response(image: Image.Image, seed: int, elapsed: float, fmt: str) -> R
 def startup():
     global _pipeline
     _pipeline = load_pipeline()
-    print(f"[Server] Ready at http://{HOST}:{PORT}")
+    logger.info("Server ready at http://%s:%s", HOST, PORT)
 
 
 @app.get("/health")
@@ -167,13 +176,17 @@ class GenerateRequest(BaseModel):
 def text_to_image(req: GenerateRequest):
     if _pipeline is None:
         raise HTTPException(status_code=503, detail="pipeline not ready")
+    logger.info("T2I request: prompt=%r, size=%dx%d, seed=%d", req.prompt, req.width, req.height, req.seed)
     with _lock:
         t0 = time.time()
         try:
             image, seed = run_generation(req.prompt, None, None, req.width, req.height, req.seed)
         except Exception as exc:
+            logger.exception("T2I generation failed")
             raise HTTPException(status_code=500, detail=f"generation failed: {exc}")
-        return image_response(image, seed, time.time() - t0, req.format)
+        elapsed = time.time() - t0
+        logger.info("T2I done: seed=%d, elapsed=%.2fs", seed, elapsed)
+        return image_response(image, seed, elapsed, req.format)
 
 
 @app.post("/v1/images/edits")
@@ -190,6 +203,7 @@ def image_edit(
     try:
         pil_image = Image.open(io.BytesIO(image)).convert("RGB")
     except Exception:
+        logger.warning("Edit request rejected: invalid image file")
         raise HTTPException(status_code=400, detail="invalid image file")
 
     # 与官方入口保持一致:同时传 input_images 和 input_image_paths
@@ -197,15 +211,22 @@ def image_edit(
     pil_image.save(tmp, format="PNG")
     tmp.close()
 
+    logger.info(
+        "Edit request: prompt=%r, input=%dx%d, output=%dx%d, seed=%d",
+        prompt, pil_image.width, pil_image.height, width, height, seed,
+    )
     with _lock:
         t0 = time.time()
         try:
             result, seed = run_generation(prompt, pil_image, tmp.name, width, height, seed)
         except Exception as exc:
+            logger.exception("Edit generation failed")
             raise HTTPException(status_code=500, detail=f"generation failed: {exc}")
         finally:
             os.unlink(tmp.name)
-        return image_response(result, seed, time.time() - t0, format)
+        elapsed = time.time() - t0
+        logger.info("Edit done: seed=%d, elapsed=%.2fs", seed, elapsed)
+        return image_response(result, seed, elapsed, format)
 
 
 if __name__ == "__main__":
