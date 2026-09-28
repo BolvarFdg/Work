@@ -40,6 +40,9 @@ NPU_CARD = 0               # 物理卡号,对应 ASCEND_RT_VISIBLE_DEVICES
 DEVICE = "npu:0"           # 进程内逻辑设备
 ENABLE_CPU_OFFLOAD = True  # 32GB 卡必须 True;64GB 卡可 False(更快)
 
+USE_CUSTOM_DIT = False     # 是否用替换 DiT 启动(启动时确定,请求时不再切换)
+CUSTOM_DIT_PATH = ""       # 替换 DiT 目录,须为 BooguImageTransformer2DModel 同构权重
+
 NUM_STEPS = 4              # Edit-Turbo DMD 步数
 DMD_SIGMA = 0.0            # Edit-Turbo 用 0.0;换纯文生图 Turbo 则改 0.001
 DEFAULT_WIDTH = 1024
@@ -71,6 +74,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from boogu.pipelines.boogu.pipeline_boogu_turbo import BooguImageTurboPipeline
+from boogu.models.transformers.transformer_boogu import BooguImageTransformer2DModel
 
 app = FastAPI(title="Boogu-Image Edit-Turbo NPU Server")
 _lock = threading.Lock()
@@ -89,6 +93,23 @@ def load_pipeline() -> BooguImageTurboPipeline:
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
     )
+
+    # 替换 DiT:必须在 enable offload / .to 之前完成,
+    # 这样 offload 钩子会挂到替换后的 transformer 上(与 inference_turbo.py 顺序一致)
+    if USE_CUSTOM_DIT:
+        dit_path = CUSTOM_DIT_PATH if os.path.isabs(CUSTOM_DIT_PATH) else os.path.join(BASE_DIR, CUSTOM_DIT_PATH)
+        if not os.path.isfile(os.path.join(dit_path, "config.json")):
+            raise FileNotFoundError(
+                f"CUSTOM_DIT_PATH invalid, config.json not found: {dit_path} "
+                "(must be a BooguImageTransformer2DModel-compatible checkpoint)"
+            )
+        logger.info("Replacing diffusion transformer with: %s", dit_path)
+        transformer = BooguImageTransformer2DModel.from_pretrained(
+            dit_path,
+            torch_dtype=torch.bfloat16,
+        )
+        pipe.set_transformer(transformer)
+
     if ENABLE_CPU_OFFLOAD:
         pipe.enable_model_cpu_offload(device=DEVICE)
     else:
@@ -161,6 +182,7 @@ def health():
         "model": MODEL_PATH,
         "device": DEVICE,
         "offload": ENABLE_CPU_OFFLOAD,
+        "custom_dit": CUSTOM_DIT_PATH if USE_CUSTOM_DIT else None,
     }
 
 
