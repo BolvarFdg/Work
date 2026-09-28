@@ -1,4 +1,4 @@
-"""Boogu-Image-0.1-Edit-Turbo Ascend NPU 推理服务.
+"""Boogu-Image Ascend NPU 推理服务(支持 Turbo/标准双模式 + DiT 替换).
 
 用法:
     pip install fastapi uvicorn python-multipart
@@ -40,11 +40,17 @@ NPU_CARD = 0               # 物理卡号,对应 ASCEND_RT_VISIBLE_DEVICES
 DEVICE = "npu:0"           # 进程内逻辑设备
 ENABLE_CPU_OFFLOAD = True  # 32GB 卡必须 True;64GB 卡可 False(更快)
 
+# Turbo 开关(启动时确定):
+#   True  → BooguImageTurboPipeline,4 步 DMD,MODEL_PATH 指向 Turbo/Edit-Turbo 权重
+#   False → BooguImagePipeline,50 步标准,MODEL_PATH 指向 Base/Edit 权重
+USE_TURBO = True
+
 USE_CUSTOM_DIT = False     # 是否用替换 DiT 启动(启动时确定,请求时不再切换)
 CUSTOM_DIT_PATH = ""       # 替换 DiT 目录,须为 BooguImageTransformer2DModel 同构权重
 
-NUM_STEPS = 4              # Edit-Turbo DMD 步数
-DMD_SIGMA = 0.0            # Edit-Turbo 用 0.0;换纯文生图 Turbo 则改 0.001
+NUM_STEPS = 4 if USE_TURBO else 50                 # 步数:Turbo=4,标准=50
+TEXT_GUIDANCE_SCALE = 1.0 if USE_TURBO else 4.0    # 文本引导:Turbo 固定 1.0,标准默认 4.0
+DMD_SIGMA = 0.0            # 仅 USE_TURBO=True 生效:Edit-Turbo=0.0,纯文生图 Turbo=0.001
 DEFAULT_WIDTH = 1024
 DEFAULT_HEIGHT = 1024
 LOG_LEVEL = "INFO"         # DEBUG / INFO / WARNING / ERROR
@@ -73,6 +79,7 @@ from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
 
+from boogu.pipelines.boogu.pipeline_boogu import BooguImagePipeline
 from boogu.pipelines.boogu.pipeline_boogu_turbo import BooguImageTurboPipeline
 from boogu.models.transformers.transformer_boogu import BooguImageTransformer2DModel
 
@@ -81,14 +88,19 @@ _lock = threading.Lock()
 _pipeline = None
 
 
-def load_pipeline() -> BooguImageTurboPipeline:
+def load_pipeline():
     model_path = MODEL_PATH if os.path.isabs(MODEL_PATH) else os.path.join(BASE_DIR, MODEL_PATH)
     if not os.path.isfile(os.path.join(model_path, "model_index.json")):
         raise FileNotFoundError(f"model_index.json not found under {model_path}")
 
     torch.npu.set_device(DEVICE)
-    logger.info("Loading pipeline: %s on %s (cpu_offload=%s)", model_path, DEVICE, ENABLE_CPU_OFFLOAD)
-    pipe = BooguImageTurboPipeline.from_pretrained(
+    pipeline_class = BooguImageTurboPipeline if USE_TURBO else BooguImagePipeline
+    logger.info(
+        "Loading %s (turbo=%s, steps=%d, text_cfg=%.1f) from %s on %s (cpu_offload=%s)",
+        pipeline_class.__name__, USE_TURBO, NUM_STEPS, TEXT_GUIDANCE_SCALE,
+        model_path, DEVICE, ENABLE_CPU_OFFLOAD,
+    )
+    pipe = pipeline_class.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
@@ -131,15 +143,16 @@ def run_generation(prompt: str, input_image: Image.Image, input_image_path, widt
         max_input_image_pixels=width * height,
         max_input_image_side_length=2 * max(width, height),
         num_inference_steps=NUM_STEPS,
-        text_guidance_scale=1.0,
+        text_guidance_scale=TEXT_GUIDANCE_SCALE,
         image_guidance_scale=1.0,
         empty_instruction_guidance_scale=0.0,
         generator=generator,
         output_type="pil",
         device=DEVICE,
-        use_dmd_student_inference=True,
-        dmd_conditioning_sigma=DMD_SIGMA,
     )
+    if USE_TURBO:
+        kwargs["use_dmd_student_inference"] = True
+        kwargs["dmd_conditioning_sigma"] = DMD_SIGMA
     if input_image is not None:
         kwargs["input_images"] = [[input_image]]
         if input_image_path:
@@ -180,6 +193,8 @@ def health():
     return {
         "status": "ok" if _pipeline is not None else "loading",
         "model": MODEL_PATH,
+        "turbo": USE_TURBO,
+        "steps": NUM_STEPS,
         "device": DEVICE,
         "offload": ENABLE_CPU_OFFLOAD,
         "custom_dit": CUSTOM_DIT_PATH if USE_CUSTOM_DIT else None,
