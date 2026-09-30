@@ -1,3 +1,58 @@
+
+
+
+
+## 执行顺序：先串行准备 → 4 个检测 Agent **并行** → 串行汇总
+
+`TranslationQAChecker.check`（agent/base.py:149）的编排逻辑：
+
+```
+PrepareAgent.prepare                    ── ① 串行：拼 sentence_block（纯本地，无 LLM 调用）
+        │
+        ▼
+asyncio.gather(                         ── ② 并行：4 个检测 Agent 同时发起 LLM 请求
+  AccuracyAgent.check ─┐
+  NumberAgent.check    ├─ 4 路 async 并发
+  TermAgent.check      │
+  SyntaxAgent.check   ─┘
+)
+        │
+        ▼
+全部成功？ ──否──► summary 直接标记失败（success=False，                 ── ③ 串行
+              error="部分检查失败：accuracy: xxx, ..."）                  不再调 LLM
+        │是
+        ▼
+SummaryAgent.summarize                  ── ④ 串行：汇总校验（第 2 轮 LLM 调用）
+```
+
+## 关键细节
+
+**1. 并行的实现方式**（agent/base.py:25-33）：
+
+```python
+async def detection(self, system_prompt, user_prompt, temperature=0.0):
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, lambda: self.detection_client.chat(...))
+```
+
+`LLMClient.chat` 是**同步的 `requests.post`**，靠 `run_in_executor` 丢进线程池实现并发——不是真正的异步 HTTP，但 4 路互不阻塞，效果等价。
+
+**2. 失败短路**（agent/base.py:158-165）：4 个检测里**任何一个失败**（LLM 超时/返回空/异常），SummaryAgent 就不执行，整批结果 `success=False`——客户端会把这个批次记入 `failures`（failed.txt），**不会**拿 4 个残缺结果去汇总。但 4 个 Agent 各自的 success/error 仍逐个返回。
+
+**3. 顺序有保证但无依赖**：`asyncio.gather` 按输入顺序返回结果，`results[0..3]` 固定对应 accuracy/number/term/syntax，按此固定顺序传给 SummaryAgent——4 个检测 Agent 之间**没有数据依赖**（共用同一个 sentence_block），纯粹是为了汇总时字段对齐。
+
+**4. 每个批次请求 = 2 轮 LLM 往返**：4 路并行检测（取最慢的）+ 1 次汇总。
+
+**5. 外层还有两层并发叠加**：
+
+```
+客户端 ThreadPoolExecutor（MAX_WORKERS=5 个批次并发）
+  × FastAPI async 端点（多请求并发处理）
+    × 每请求 4 路检测 Agent 并发
+```
+
+理论峰值 ≈ 5 批 × 4 Agent = 20 路并发 LLM 请求（汇总轮再 +5）。这也解释了为什么 config 里 `BATCH=5 / MAX_WORKERS=5 / LLM_TIMEOUT=120 / TIMEOUT=600` 的梯度设置——单请求要容忍 2 轮串行 LLM 调用。
+
 ## 入口
 
 **服务端**：`python server.py [port] [host]` 启动 FastAPI（默认 `0.0.0.0:8000`，server.py:176）
