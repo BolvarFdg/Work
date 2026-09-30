@@ -1,8 +1,7 @@
-import importlib.metadata as _md
-_orig_version = _md.version
-def _safe_version(name, *a, **kw):
-    try:
-        return _orig_version(name, *a, **kw)
-    except _md.PackageNotFoundError:
-        return "0.0.0"   # 视频分支的版本常量，音频链路永远用不到
-_md.version = _safe_version
+<trans-unit id="tu1" elementId="p1">
+  <seg-source>
+    <mrk mtype="seg">该设备支持<ph id="wc1">&lt;?otherlink[{ID:'123456'}]?&gt;</ph>，速率为<x id="x1" xid="file:///hw/topic.dita#topic1/p1/x1" ctype="x-other" x-wc:pos="0:5"/>，协议版本&amp;lt;v2.0&amp;gt;。</mrk>
+    <mrk mtype="seg">最大功率<ph id="var1"/>，CO<sub id="s1">2</sub>浓度为0.03%。</mrk>
+  </seg-source>
+  <target>…（同结构，译文为 0.3%）…</target>
+</trans-unit>
