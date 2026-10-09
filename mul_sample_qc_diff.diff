@@ -1,0 +1,63 @@
+diff --git a/agent/base.py b/agent/base.py
+index 03bbedb..0ae3c9e 100644
+--- a/agent/base.py
++++ b/agent/base.py
+@@ -1,4 +1,5 @@
+ import asyncio
++import json
+ import os
+ from dataclasses import dataclass
+ from typing import Optional, Dict, Any, List
+@@ -8,6 +9,8 @@ PROMPT_DIR = os.path.join(PROJECT_ROOT, 'prompt')
+ 
+ from llm_client import create_detection_client
+ 
++from config import SKIP_SUMMARY_WHEN_CLEAN
++
+ 
+ @dataclass
+ class CheckResult:
+@@ -127,6 +130,15 @@ class SummaryAgent(BaseAgent):
+             return CheckResult(agent_type="summary", content="", success=False, error=str(e))
+ 
+ 
++def _error_count(content: str) -> Optional[int]:
++    """解析检测 Agent 输出 JSON 的 error_list 条数；解析失败返回 None（未知，调用方按不跳过处理）。"""
++    try:
++        data = json.loads(content)
++        return len(data.get("error_list") or [])
++    except (json.JSONDecodeError, TypeError, AttributeError):
++        return None
++
++
+ class TranslationQAChecker:
+     _instance: Optional['TranslationQAChecker'] = None
+     _initialized: bool = False
+@@ -163,6 +175,12 @@ class TranslationQAChecker:
+                 success=False,
+                 error=f"部分检查失败：{', '.join(failed_checks)}"
+             )
++        elif SKIP_SUMMARY_WHEN_CLEAN and all(_error_count(r.content) == 0 for r in results):
++            summary_result = CheckResult(
++                agent_type="summary",
++                content=json.dumps({"final_has_error": False, "error_list": []}, ensure_ascii=False),
++                success=True
++            )
+         else:
+             summary_result = await self.summary_agent.summarize(
+                 input_infos,
+diff --git a/config.py b/config.py
+index 851ee73..5f40ecd 100644
+--- a/config.py
++++ b/config.py
+@@ -12,6 +12,10 @@ TIMEOUT = 600                           # 单批请求超时（秒）
+ MAX_WORKERS = 5                         # 并发发送批次的最大线程数
+ MOCK_MODE = False                       # True 时不真正请求 agent（返回空），用于定位统计问题
+ 
++# ============================== 检查策略 ==============================
++SKIP_SUMMARY_WHEN_CLEAN = True          # 4 个检测 Agent 均成功且 error_list 全空时跳过 summary 调用
++                                        # （直接输出等价空结果，省 1/5 调用且干净批延迟减半）
++
+ # ============================== 目录与文件 ==============================
+ ROOT = "."                              # 手册所在的根目录
+ # 手册列表（按脚本用途分离，自行填写手册目录名）
