@@ -3,7 +3,8 @@
 """
 LLM 推理服务性能测试脚本（零依赖，仅 Python 标准库）
 
-测试指定并发数下的端到端延迟 / 吞吐量。
+测试指定并发数下的端到端延迟 / 吞吐量（滑动窗口式持续并发：
+某档并发 N 时，任何时刻都保持恰好 N 个请求在途，完成一个立刻补一个）。
 所有请求均为：非流式 + temperature=0 + 禁止思考。
 
 用法示例:
@@ -27,7 +28,6 @@ import os
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from http.client import HTTPConnection, HTTPSConnection
@@ -214,20 +214,30 @@ def run_level(args, prompts: list, level: int) -> dict:
 
     results: list[ReqResult] = []
     lock = threading.Lock()
-    done = 0
+    state = {"next_idx": 0, "done": 0}
 
-    with ThreadPoolExecutor(max_workers=level) as pool:
-        futures = [pool.submit(send_one, args, prompts[i % len(prompts)])
-                   for i in range(total)]
-        start = time.perf_counter()
-        for fut in as_completed(futures):
-            r = fut.result()
-            results.append(r)
+    def worker():
+        """常驻 worker：发完一个请求立即取下一个，保持并发水位不下降"""
+        while True:
             with lock:
-                done += 1
-                if done % 10 == 0 or done == total:
-                    print(f"  进度 {done}/{total}", flush=True)
-        wall = time.perf_counter() - start
+                idx = state["next_idx"]
+                if idx >= total:
+                    return
+                state["next_idx"] += 1
+            r = send_one(args, prompts[idx % len(prompts)])
+            with lock:
+                results.append(r)
+                state["done"] += 1
+                if state["done"] % 10 == 0 or state["done"] == total:
+                    print(f"  进度 {state['done']}/{total}", flush=True)
+
+    threads = [threading.Thread(target=worker) for _ in range(level)]
+    start = time.perf_counter()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    wall = time.perf_counter() - start
 
     ok = [r for r in results if r.ok]
     failed = len(results) - len(ok)
