@@ -12,9 +12,9 @@ LLM 推理服务性能测试脚本（零依赖，仅 Python 标准库）
     # 测试 deepseek-v4-flash，结果追加到同一个 csv 方便对比
     python3 llm_bench.py --url http://localhost:8000 --model deepseek-v4-flash --csv result.csv
 
-    # 自定义并发档位和总请求数
+    # 自定义并发档位；总请求数默认为并发数的 20 倍，也可用 --total-requests 固定
     python3 llm_bench.py --url http://localhost:8000 --model qwen3.8-27B \
-        --concurrency 1 5 10 20 30 --total-requests 200
+        --concurrency 1 5 10 20 30 --requests-per-concurrency 20
 """
 
 from __future__ import annotations
@@ -234,8 +234,10 @@ def warmup(args) -> None:
 
 
 def run_level(args, prompts: list, level: int) -> dict:
+    total = (args.total_requests if args.total_requests is not None
+             else level * args.requests_per_concurrency)
     print(f"\n{'=' * 60}")
-    print(f"并发数 = {level}，总请求数 = {args.total_requests}")
+    print(f"并发数 = {level}，总请求数 = {total}")
     print("=" * 60)
 
     if args.warmup > 0:
@@ -248,15 +250,15 @@ def run_level(args, prompts: list, level: int) -> dict:
 
     with ThreadPoolExecutor(max_workers=level) as pool:
         futures = [pool.submit(send_one, args, prompts[i % len(prompts)])
-                   for i in range(args.total_requests)]
+                   for i in range(total)]
         start = time.perf_counter()
         for fut in as_completed(futures):
             r = fut.result()
             results.append(r)
             with lock:
                 done += 1
-                if done % 10 == 0 or done == args.total_requests:
-                    print(f"  进度 {done}/{args.total_requests}", flush=True)
+                if done % 10 == 0 or done == total:
+                    print(f"  进度 {done}/{total}", flush=True)
         wall = time.perf_counter() - start
 
     ok = [r for r in results if r.ok]
@@ -268,6 +270,7 @@ def run_level(args, prompts: list, level: int) -> dict:
 
     stats = {
         "level": level,
+        "total": total,
         "completed": len(ok),
         "failed": failed,
         "wall_s": wall,
@@ -304,7 +307,7 @@ def append_csv(path: str, args, s: dict) -> None:
     ]
     row = [
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"), args.model, s["level"],
-        args.total_requests, s["completed"], s["failed"],
+        s["total"], s["completed"], s["failed"],
         f"{s['wall_s']:.2f}", f"{s['rps']:.3f}", f"{s['tok_s']:.1f}",
         f"{s['mean_out_tokens']:.1f}",
         f"{_mean(s['ttft']):.1f}", f"{pct(s['ttft'], 50):.1f}",
@@ -341,8 +344,11 @@ def main():
     parser.add_argument("--model", required=True, help="模型名，需与 /v1/models 返回的 id 一致")
     parser.add_argument("--concurrency", nargs="+", type=int,
                         default=[1, 5, 10, 20, 30], help="并发档位列表")
-    parser.add_argument("--total-requests", type=int, default=100,
-                        help="每档并发的总请求数")
+    parser.add_argument("--total-requests", type=int, default=None,
+                        help="每档并发固定总请求数；不传则动态取 并发数 × "
+                             "requests-per-concurrency")
+    parser.add_argument("--requests-per-concurrency", type=int, default=20,
+                        help="未指定 --total-requests 时，每档总请求数 = 并发数 × 该倍数")
     parser.add_argument("--max-tokens", type=int, default=256,
                         help="限制单请求输出长度（保证不同模型可比性）")
     parser.add_argument("--temperature", type=float, default=0.0,
@@ -356,12 +362,18 @@ def main():
     parser.add_argument("--csv", default=None, help="结果追加写入的 csv 路径")
     args = parser.parse_args()
 
-    if args.total_requests < max(args.concurrency):
+    if args.total_requests is not None and args.total_requests < max(args.concurrency):
         print(f"提示: total-requests({args.total_requests}) < "
               f"最大并发({max(args.concurrency)})，高并发档位实际并发达不到目标值")
 
     prompts = load_prompts(args.prompt_file) if args.prompt_file else DEFAULT_PROMPTS
     print(f"目标: {args.url}  模型: {args.model}")
+    if args.total_requests is not None:
+        print(f"每档总请求数: 固定 {args.total_requests}")
+    else:
+        print(f"每档总请求数: 动态 = 并发数 × {args.requests_per_concurrency} "
+              f"（如并发 1→{1 * args.requests_per_concurrency}，"
+              f"并发 30→{30 * args.requests_per_concurrency}）")
     print(f"prompt 池: {len(prompts)} 条（循环使用）  max_tokens: {args.max_tokens}  "
           f"temperature: {args.temperature}  思考模式: {'开' if args.thinking else '关'}")
 
