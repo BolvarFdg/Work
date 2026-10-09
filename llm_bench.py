@@ -3,16 +3,17 @@
 """
 LLM 推理服务性能测试脚本（零依赖，仅 Python 标准库）
 
-测试指定并发数下的 TTFT / ITL / 端到端延迟 / 吞吐量。
+测试指定并发数下的端到端延迟 / 吞吐量。
+所有请求均为：非流式 + temperature=0 + 禁止思考。
 
 用法示例:
-    # 测试 qwen3.8-27B（默认并发 1 5 10 20 30，每档 100 个请求）
+    # 测试 qwen3.8-27B（默认并发 1 5 10 20 30，每档请求数 = 并发数 × 20）
     python3 llm_bench.py --url http://localhost:8000 --model qwen3.8-27B --csv result.csv
 
     # 测试 deepseek-v4-flash，结果追加到同一个 csv 方便对比
     python3 llm_bench.py --url http://localhost:8000 --model deepseek-v4-flash --csv result.csv
 
-    # 自定义并发档位；总请求数默认为并发数的 20 倍，也可用 --total-requests 固定
+    # 自定义并发档位和倍数
     python3 llm_bench.py --url http://localhost:8000 --model qwen3.8-27B \
         --concurrency 1 5 10 20 30 --requests-per-concurrency 20
 """
@@ -27,7 +28,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from http.client import HTTPConnection, HTTPSConnection
 from urllib.parse import urlparse
@@ -35,7 +36,7 @@ from urllib.parse import urlparse
 # ---------------------------------------------------------------------------
 # 固定 prompt 池：两个模型循环使用完全相同的输入，保证测试公平、可复现。
 # 刻意混合了短问答 / 数学推理 / 代码 / 翻译 / 长文本摘要 / 英文等任务，
-# 同时包含长短不同的输入（影响 prefill 和 TTFT）。
+# 同时包含长短不同的输入（影响 prefill 耗时）。
 # ---------------------------------------------------------------------------
 DEFAULT_PROMPTS = [
     "用一句话解释什么是量子计算。",
@@ -58,15 +59,15 @@ DEFAULT_PROMPTS = [
     "解释Transformer架构中自注意力机制的作用，以及它为什么比RNN更适合并行计算。",
 ]
 
+TEMPERATURE = 0.0  # 固定温度 0，保证可复现
+
 
 @dataclass
 class ReqResult:
     ok: bool = False
     error: str = ""
-    ttft_s: float | None = None  # 首 token 延迟（秒）
-    e2e_s: float | None = None   # 端到端延迟（秒）
+    e2e_s: float | None = None  # 端到端延迟（秒）
     output_tokens: int = 0
-    itls: list = field(default_factory=list)  # token 间隔（秒）
 
 
 def pct(vals: list, p: float) -> float:
@@ -82,16 +83,16 @@ def pct(vals: list, p: float) -> float:
     return s[f] + (s[c] - s[f]) * (k - f)
 
 
+def _mean(vals: list) -> float:
+    return sum(vals) / len(vals) if vals else float("nan")
+
+
 def fmt_ms(vals: list) -> str:
     return (
         f"mean={_mean(vals):8.1f}  "
         f"p50={pct(vals, 50):8.1f}  p90={pct(vals, 90):8.1f}  "
         f"p95={pct(vals, 95):8.1f}  p99={pct(vals, 99):8.1f}"
     )
-
-
-def _mean(vals: list) -> float:
-    return sum(vals) / len(vals) if vals else float("nan")
 
 
 def make_conn(url: str, timeout: float):
@@ -101,20 +102,17 @@ def make_conn(url: str, timeout: float):
     return HTTPConnection(parsed.hostname, parsed.port or 80, timeout=timeout)
 
 
-def build_payload(args, prompt: str, max_tokens: int, stream: bool) -> dict:
+def build_payload(model: str, prompt: str, max_tokens: int) -> dict:
     payload = {
-        "model": args.model,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": args.temperature,
+        "temperature": TEMPERATURE,
         "max_tokens": max_tokens,
-        "stream": stream,
-    }
-    if stream:
-        payload["stream_options"] = {"include_usage": True}
-    if not args.thinking:
+        "stream": False,
         # Qwen3 系列模板使用 enable_thinking，DeepSeek 系列使用 thinking；
         # vLLM 会自动过滤当前模型模板不支持的变量，两个都传是安全的。
-        payload["chat_template_kwargs"] = {"enable_thinking": False, "thinking": False}
+        "chat_template_kwargs": {"enable_thinking": False, "thinking": False},
+    }
     return payload
 
 
@@ -137,69 +135,39 @@ def check_model_exists(args) -> None:
 
 
 def send_one(args, prompt: str) -> ReqResult:
-    """发送单个流式请求，解析 SSE，记录 TTFT / ITL / 输出 token 数"""
+    """发送单个非流式请求，记录端到端延迟和输出 token 数"""
     result = ReqResult()
-    payload = build_payload(args, prompt, args.max_tokens, stream=True)
+    payload = build_payload(args.model, prompt, args.max_tokens)
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     start = time.perf_counter()
-    ttft = None
-    prev = None
-    usage_tokens = None
-    content_chunks = 0
     conn = None
     try:
         conn = make_conn(args.url, timeout=args.timeout)
         conn.request("POST", "/v1/chat/completions", body=body, headers=headers)
         resp = conn.getresponse()
+        raw = resp.read()
+        result.e2e_s = time.perf_counter() - start
+
         if resp.status != 200:
-            err = resp.read(500).decode("utf-8", "replace")
-            result.error = f"HTTP {resp.status}: {err[:200]}"
+            result.error = f"HTTP {resp.status}: {raw[:200].decode('utf-8', 'replace')}"
             return result
 
-        buf = b""
-        done = False
-        while not done:
-            chunk = resp.read1(65536)
-            if not chunk:
-                break
-            buf += chunk
-            while b"\n" in buf:
-                line, buf = buf.split(b"\n", 1)
-                line = line.strip()
-                if not line.startswith(b"data:"):
-                    continue
-                data = line[5:].strip()
-                if data == b"[DONE]":
-                    done = True
-                    break
-                try:
-                    obj = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                usage = obj.get("usage")
-                if usage and usage.get("completion_tokens") is not None:
-                    usage_tokens = usage["completion_tokens"]
-                choices = obj.get("choices") or []
-                if not choices:
-                    continue
-                delta = choices[0].get("delta") or {}
-                if delta.get("content"):
-                    content_chunks += 1
-                    now = time.perf_counter()
-                    if ttft is None:
-                        ttft = now - start
-                        prev = now
-                    else:
-                        result.itls.append(now - prev)
-                        prev = now
+        data = json.loads(raw.decode("utf-8"))
+        usage = data.get("usage") or {}
+        output_tokens = usage.get("completion_tokens")
+        choices = data.get("choices") or []
+        content = ""
+        if choices:
+            msg = choices[0].get("message") or {}
+            content = msg.get("content") or ""
 
-        result.ttft_s = ttft
-        result.e2e_s = time.perf_counter() - start
-        result.output_tokens = usage_tokens if usage_tokens is not None else content_chunks
-        if result.output_tokens == 0 or ttft is None:
-            result.error = "未收到任何输出 token"
+        if output_tokens is None:
+            result.error = "响应中缺少 usage.completion_tokens"
+        elif output_tokens == 0 and not content:
+            result.error = "模型没有输出任何内容"
         else:
+            result.output_tokens = output_tokens
             result.ok = True
         return result
     except Exception as e:
@@ -217,8 +185,8 @@ def send_one(args, prompt: str) -> ReqResult:
 def warmup(args) -> None:
     """每档并发前发送少量小请求预热（不计入统计）"""
     for i in range(args.warmup):
-        payload = build_payload(args, DEFAULT_PROMPTS[i % len(DEFAULT_PROMPTS)],
-                                max_tokens=4, stream=False)
+        payload = build_payload(args.model, DEFAULT_PROMPTS[i % len(DEFAULT_PROMPTS)],
+                                max_tokens=4)
         try:
             conn = make_conn(args.url, timeout=args.timeout)
             conn.request("POST", "/v1/chat/completions",
@@ -263,9 +231,7 @@ def run_level(args, prompts: list, level: int) -> dict:
 
     ok = [r for r in results if r.ok]
     failed = len(results) - len(ok)
-    ttfts_ms = [r.ttft_s * 1000 for r in ok]
     e2es_ms = [r.e2e_s * 1000 for r in ok]
-    itls_ms = [x * 1000 for r in ok for x in r.itls]
     out_total = sum(r.output_tokens for r in ok)
 
     stats = {
@@ -277,9 +243,7 @@ def run_level(args, prompts: list, level: int) -> dict:
         "rps": len(ok) / wall if wall > 0 else 0.0,
         "tok_s": out_total / wall if wall > 0 else 0.0,
         "mean_out_tokens": out_total / len(ok) if ok else 0.0,
-        "ttft": ttfts_ms,
         "e2e": e2es_ms,
-        "itl": itls_ms,
         "first_error": next((r.error for r in results if not r.ok), ""),
     }
 
@@ -290,9 +254,7 @@ def run_level(args, prompts: list, level: int) -> dict:
     print(f"请求吞吐: {stats['rps']:.2f} req/s")
     print(f"输出吞吐: {stats['tok_s']:.1f} tok/s")
     print(f"平均输出: {stats['mean_out_tokens']:.1f} tokens/请求")
-    print(f"TTFT  (ms): {fmt_ms(ttfts_ms)}")
-    print(f"总延迟(ms): {fmt_ms(e2es_ms)}")
-    print(f"ITL   (ms): {fmt_ms(itls_ms)}")
+    print(f"E2E延迟(ms): {fmt_ms(e2es_ms)}")
     return stats
 
 
@@ -301,23 +263,16 @@ def append_csv(path: str, args, s: dict) -> None:
     header = [
         "time", "model", "concurrency", "total_requests", "completed", "failed",
         "wall_s", "req_per_s", "out_tok_per_s", "mean_out_tokens",
-        "ttft_mean_ms", "ttft_p50_ms", "ttft_p90_ms", "ttft_p95_ms", "ttft_p99_ms",
         "e2e_mean_ms", "e2e_p50_ms", "e2e_p90_ms", "e2e_p95_ms", "e2e_p99_ms",
-        "itl_mean_ms", "itl_p50_ms", "itl_p90_ms", "itl_p99_ms",
     ]
     row = [
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"), args.model, s["level"],
         s["total"], s["completed"], s["failed"],
         f"{s['wall_s']:.2f}", f"{s['rps']:.3f}", f"{s['tok_s']:.1f}",
         f"{s['mean_out_tokens']:.1f}",
-        f"{_mean(s['ttft']):.1f}", f"{pct(s['ttft'], 50):.1f}",
-        f"{pct(s['ttft'], 90):.1f}", f"{pct(s['ttft'], 95):.1f}",
-        f"{pct(s['ttft'], 99):.1f}",
         f"{_mean(s['e2e']):.1f}", f"{pct(s['e2e'], 50):.1f}",
         f"{pct(s['e2e'], 90):.1f}", f"{pct(s['e2e'], 95):.1f}",
         f"{pct(s['e2e'], 99):.1f}",
-        f"{_mean(s['itl']):.2f}", f"{pct(s['itl'], 50):.2f}",
-        f"{pct(s['itl'], 90):.2f}", f"{pct(s['itl'], 99):.2f}",
     ]
     new_file = not os.path.exists(path) or os.path.getsize(path) == 0
     with open(path, "a", newline="", encoding="utf-8-sig") as f:
@@ -338,7 +293,7 @@ def load_prompts(path: str) -> list:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LLM 服务性能测试：多档并发下的 TTFT/ITL/吞吐",
+        description="LLM 服务性能测试：非流式 + 温度0 + 禁止思考，多档并发下的延迟/吞吐",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--url", default="http://localhost:8000", help="vLLM 服务地址")
     parser.add_argument("--model", required=True, help="模型名，需与 /v1/models 返回的 id 一致")
@@ -351,10 +306,6 @@ def main():
                         help="未指定 --total-requests 时，每档总请求数 = 并发数 × 该倍数")
     parser.add_argument("--max-tokens", type=int, default=256,
                         help="限制单请求输出长度（保证不同模型可比性）")
-    parser.add_argument("--temperature", type=float, default=0.0,
-                        help="采样温度，0 保证可复现")
-    parser.add_argument("--thinking", action="store_true",
-                        help="开启思考模式（默认关闭）")
     parser.add_argument("--warmup", type=int, default=3, help="每档并发前预热请求数")
     parser.add_argument("--timeout", type=float, default=600, help="单请求超时（秒）")
     parser.add_argument("--prompt-file", default=None,
@@ -374,8 +325,8 @@ def main():
         print(f"每档总请求数: 动态 = 并发数 × {args.requests_per_concurrency} "
               f"（如并发 1→{1 * args.requests_per_concurrency}，"
               f"并发 30→{30 * args.requests_per_concurrency}）")
-    print(f"prompt 池: {len(prompts)} 条（循环使用）  max_tokens: {args.max_tokens}  "
-          f"temperature: {args.temperature}  思考模式: {'开' if args.thinking else '关'}")
+    print(f"模式: 非流式  temperature: {TEMPERATURE}  思考模式: 关  "
+          f"prompt 池: {len(prompts)} 条（循环使用）  max_tokens: {args.max_tokens}")
 
     check_model_exists(args)
 
@@ -384,12 +335,12 @@ def main():
         all_stats.append(run_level(args, prompts, level))
 
     print(f"\n{'=' * 60}\n汇总")
-    print(f"{'并发':>4}  {'req/s':>8}  {'tok/s':>9}  {'TTFT p50':>9}  "
-          f"{'TTFT p99':>9}  {'E2E p50':>9}  {'E2E p99':>9}  {'失败':>4}")
+    print(f"{'并发':>4}  {'req/s':>8}  {'tok/s':>9}  {'E2E p50':>9}  "
+          f"{'E2E p90':>9}  {'E2E p99':>9}  {'失败':>4}")
     for s in all_stats:
         print(f"{s['level']:>4}  {s['rps']:>8.2f}  {s['tok_s']:>9.1f}  "
-              f"{pct(s['ttft'], 50):>9.1f}  {pct(s['ttft'], 99):>9.1f}  "
-              f"{pct(s['e2e'], 50):>9.1f}  {pct(s['e2e'], 99):>9.1f}  {s['failed']:>4}")
+              f"{pct(s['e2e'], 50):>9.1f}  {pct(s['e2e'], 90):>9.1f}  "
+              f"{pct(s['e2e'], 99):>9.1f}  {s['failed']:>4}")
 
     if args.csv:
         for s in all_stats:
