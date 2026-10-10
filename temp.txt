@@ -1,7 +1,33 @@
-<trans-unit id="tu1" elementId="p1">
-  <seg-source>
-    <mrk mtype="seg">该设备支持<ph id="wc1">&lt;?otherlink[{ID:'123456'}]?&gt;</ph>，速率为<x id="x1" xid="file:///hw/topic.dita#topic1/p1/x1" ctype="x-other" x-wc:pos="0:5"/>，协议版本&amp;lt;v2.0&amp;gt;。</mrk>
-    <mrk mtype="seg">最大功率<ph id="var1"/>，CO<sub id="s1">2</sub>浓度为0.03%。</mrk>
-  </seg-source>
-  <target>…（同结构，译文为 0.3%）…</target>
-</trans-unit>
+#!/bin/sh
+# ===== 环境变量（官方验证的性能开关）=====
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True   # 减少内存碎片
+export HCCL_BUFFSIZE=1024
+export HCCL_OP_EXPANSION_MODE=AIV
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=1
+export TASK_QUEUE_ENABLE=1
+export VLLM_ASCEND_ENABLE_DENSE_OPTIMIZE=1    # dense 模型专用优化
+export VLLM_ASCEND_ENABLE_FUSED_MC2=1         # 融合通信算子
+export VLLM_ASCEND_ENABLE_PREFETCH_MLP=1      # MLP 预取
+export VLLM_ASCEND_ENABLE_NZ=1                # NZ 布局
+# 注意：不要设置 ASCEND_LAUNCH_BLOCKING=1，会与图模式冲突直接报错
+
+# ===== 启动命令（8 卡 A2：TP=2 + DP=4，w8a8 量化 + MTP + 图编译模式）=====
+vllm serve /path/to/Qwen3.5-27B-w8a8-mtp \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --served-model-name qwen3.5-27B \
+  --tensor-parallel-size 2 \
+  --data-parallel-size 4 \
+  --quantization ascend \
+  --max-model-len 32768 \
+  --max-num-seqs 32 \
+  --max-num-batched-tokens 8192 \
+  --gpu-memory-utilization 0.95 \
+  --trust-remote-code \
+  --no-enable-prefix-caching \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3, "enforce_eager": true}' \
+  --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}' \
+  --additional-config '{"enable_cpu_binding": true, "enable_weight_nz_layout": true, "ascend_compilation_config": {"enable_npugraph_ex": true, "enable_static_kernel": false}}' \
+  --async-scheduling \
+  --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 128}'
