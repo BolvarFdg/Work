@@ -36,6 +36,8 @@ HEADERS = {
     "Content-Type": "application/json",
     # "Authorization": "Bearer EMPTY",  # 服务有鉴权时取消注释并填写
 }
+
+START_DELAY = 0  # 启动脚本后延迟多少秒再正式开始测试，0 = 立即开始
 # ==============================================================
 
 
@@ -329,8 +331,17 @@ def main():
     parser.add_argument("--timeout", type=float, default=600, help="单请求超时（秒）")
     parser.add_argument("--prompt-file", default=None,
                         help="自定义 prompt 文件（每行一个），不传则使用内置混合 prompt 池")
+    parser.add_argument("--start-delay", type=int, default=START_DELAY,
+                        help="启动脚本后延迟多少秒再开始测试（默认取脚本顶部配置）")
     parser.add_argument("--csv", default=None, help="结果追加写入的 csv 路径")
     args = parser.parse_args()
+
+    if args.start_delay > 0:
+        print(f"[定时] 将在 {args.start_delay} 秒后开始测试...")
+        for remaining in range(args.start_delay, 0, -1):
+            print(f"\r[定时] 剩余 {remaining:5d} 秒", end="", flush=True)
+            time.sleep(1)
+        print("\r[定时] 时间到，开始测试          ")
 
     if args.total_requests is not None and args.total_requests < max(args.concurrency):
         print(f"提示: total-requests({args.total_requests}) < "
