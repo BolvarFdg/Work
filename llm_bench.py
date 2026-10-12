@@ -7,16 +7,9 @@ LLM 推理服务性能测试脚本（零依赖，仅 Python 标准库）
 某档并发 N 时，任何时刻都保持恰好 N 个请求在途，完成一个立刻补一个）。
 所有请求均为：非流式 + temperature=0 + 禁止思考。
 
-用法示例:
-    # 测试 qwen3.8-27B（默认并发 1 5 10 20 30，每档请求数 = 并发数 × 20）
-    python3 llm_bench.py --url http://localhost:8000 --model qwen3.8-27B --csv result.csv
-
-    # 测试 deepseek-v4-flash，结果追加到同一个 csv 方便对比
-    python3 llm_bench.py --url http://localhost:8000 --model deepseek-v4-flash --csv result.csv
-
-    # 自定义并发档位和倍数
-    python3 llm_bench.py --url http://localhost:8000 --model qwen3.8-27B \
-        --concurrency 1 5 10 20 30 --requests-per-concurrency 20
+用法: 直接修改下方"配置区"后运行
+    python3 llm_bench.py
+    python3 llm_bench.py --concurrency 1 5 10 --csv result.csv   # 临时覆盖部分参数
 """
 
 from __future__ import annotations
@@ -32,7 +25,19 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
-from urllib.parse import urlparse
+
+# ==================== 配置区（直接改这里） ====================
+URL = "http://localhost:8000/v1/chat/completions"  # 推理接口完整地址
+MODELS_URL = "http://localhost:8000/v1/models"     # 模型列表接口完整地址
+MODEL = "qwen3.5-27B"                              # 模型名，与 /v1/models 返回的 id 一致
+
+# 所有请求（含模型列表查询）统一携带的 header
+HEADERS = {
+    "Content-Type": "application/json",
+    # "Authorization": "Bearer EMPTY",  # 服务有鉴权时取消注释并填写
+}
+# ==============================================================
+
 
 # ---------------------------------------------------------------------------
 # 固定 prompt 池：两个模型循环使用完全相同的输入，保证测试公平、可复现。
@@ -97,10 +102,19 @@ def fmt_ms(vals: list) -> str:
 
 
 def post_json(url: str, payload: dict, timeout: float) -> tuple[int, bytes]:
-    """POST JSON 到完整 URL，返回 (状态码, 响应体)"""
+    """POST JSON，携带配置区 HEADERS，返回 (状态码, 响应体)"""
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    req = urllib.request.Request(url, data=body, headers=HEADERS, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def get_json(url: str, timeout: float) -> tuple[int, bytes]:
+    """GET，携带配置区 HEADERS，返回 (状态码, 响应体)"""
+    req = urllib.request.Request(url, headers=HEADERS, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.read()
@@ -129,9 +143,11 @@ def build_payload(model: str, prompt: str, max_tokens: int, fixed_output: bool =
 def check_model_exists(args) -> None:
     """启动后先校验模型名，避免白白跑一轮"""
     try:
-        base = f"{urlparse(args.url).scheme}://{urlparse(args.url).netloc}"
-        with urllib.request.urlopen(base + "/v1/models", timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        status, raw = get_json(args.models_url, timeout=10)
+        if status != 200:
+            print(f"[check] 查询模型列表返回 HTTP {status}，跳过校验")
+            return
+        data = json.loads(raw.decode("utf-8"))
         ids = [m.get("id") for m in data.get("data", [])]
         if args.model in ids:
             print(f"[check] 模型 '{args.model}' 已在服务端加载 ✓")
@@ -292,9 +308,11 @@ def main():
     parser = argparse.ArgumentParser(
         description="LLM 服务性能测试：非流式 + 温度0 + 禁止思考，多档并发下的延迟/吞吐",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--url", default="http://localhost:8000/v1/chat/completions",
-                        help="完整接口地址，直接使用你配置的 URL")
-    parser.add_argument("--model", required=True, help="模型名，需与 /v1/models 返回的 id 一致")
+    parser.add_argument("--url", default=URL, help="推理接口完整地址（默认取脚本顶部配置）")
+    parser.add_argument("--models-url", default=MODELS_URL,
+                        help="模型列表接口完整地址（默认取脚本顶部配置）")
+    parser.add_argument("--model", default=MODEL,
+                        help="模型名，需与 /v1/models 返回的 id 一致（默认取脚本顶部配置）")
     parser.add_argument("--concurrency", nargs="+", type=int,
                         default=[1, 5, 10, 20, 30], help="并发档位列表")
     parser.add_argument("--total-requests", type=int, default=None,
