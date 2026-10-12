@@ -28,9 +28,10 @@ import os
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
-from http.client import HTTPConnection, HTTPSConnection
 from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
@@ -95,35 +96,42 @@ def fmt_ms(vals: list) -> str:
     )
 
 
-def make_conn(url: str, timeout: float):
-    parsed = urlparse(url)
-    if parsed.scheme == "https":
-        return HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=timeout)
-    return HTTPConnection(parsed.hostname, parsed.port or 80, timeout=timeout)
+def post_json(url: str, payload: dict, timeout: float) -> tuple[int, bytes]:
+    """POST JSON 到完整 URL，返回 (状态码, 响应体)"""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
 
 
-def build_payload(model: str, prompt: str, max_tokens: int) -> dict:
+def build_payload(model: str, prompt: str, max_tokens: int, fixed_output: bool = True) -> dict:
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": TEMPERATURE,
         "max_tokens": max_tokens,
         "stream": False,
-        # Qwen3 系列模板使用 enable_thinking，DeepSeek 系列使用 thinking；
-        # vLLM 会自动过滤当前模型模板不支持的变量，两个都传是安全的。
-        "chat_template_kwargs": {"enable_thinking": False, "thinking": False},
     }
+    if fixed_output:
+        # 强制每个请求恰好生成 max_tokens 个 token（不会提前停止），
+        # 保证两个模型输出量完全一致，E2E / req/s / tok/s 均可直接对比
+        payload["min_tokens"] = max_tokens
+    # Qwen3 系列模板使用 enable_thinking，DeepSeek 系列使用 thinking；
+    # vLLM 会自动过滤当前模型模板不支持的变量，两个都传是安全的。
+    payload["chat_template_kwargs"] = {"enable_thinking": False, "thinking": False}
     return payload
 
 
 def check_model_exists(args) -> None:
     """启动后先校验模型名，避免白白跑一轮"""
     try:
-        conn = make_conn(args.url, timeout=10)
-        conn.request("GET", "/v1/models")
-        resp = conn.getresponse()
-        data = json.loads(resp.read().decode("utf-8"))
-        conn.close()
+        base = f"{urlparse(args.url).scheme}://{urlparse(args.url).netloc}"
+        with urllib.request.urlopen(base + "/v1/models", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
         ids = [m.get("id") for m in data.get("data", [])]
         if args.model in ids:
             print(f"[check] 模型 '{args.model}' 已在服务端加载 ✓")
@@ -131,28 +139,22 @@ def check_model_exists(args) -> None:
             print(f"[check] 警告: 模型 '{args.model}' 不在服务列表中 {ids}，"
                   f"请求可能返回 404，请核对 /v1/models 返回的 id")
     except Exception as e:
-        print(f"[check] 无法连接 {args.url} 查询模型列表: {e!r}")
+        print(f"[check] 无法查询模型列表: {e!r}")
 
 
 def send_one(args, prompt: str) -> ReqResult:
     """发送单个非流式请求，记录端到端延迟和输出 token 数"""
     result = ReqResult()
-    payload = build_payload(args.model, prompt, args.max_tokens)
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    payload = build_payload(args.model, prompt, args.max_tokens,
+                            fixed_output=not args.no_fixed_output)
     start = time.perf_counter()
-    conn = None
+    status, raw = post_json(args.url, payload, args.timeout)
+    result.e2e_s = time.perf_counter() - start
+
+    if status != 200:
+        result.error = f"HTTP {status}: {raw[:200].decode('utf-8', 'replace')}"
+        return result
     try:
-        conn = make_conn(args.url, timeout=args.timeout)
-        conn.request("POST", "/v1/chat/completions", body=body, headers=headers)
-        resp = conn.getresponse()
-        raw = resp.read()
-        result.e2e_s = time.perf_counter() - start
-
-        if resp.status != 200:
-            result.error = f"HTTP {resp.status}: {raw[:200].decode('utf-8', 'replace')}"
-            return result
-
         data = json.loads(raw.decode("utf-8"))
         usage = data.get("usage") or {}
         output_tokens = usage.get("completion_tokens")
@@ -161,7 +163,6 @@ def send_one(args, prompt: str) -> ReqResult:
         if choices:
             msg = choices[0].get("message") or {}
             content = msg.get("content") or ""
-
         if output_tokens is None:
             result.error = "响应中缺少 usage.completion_tokens"
         elif output_tokens == 0 and not content:
@@ -169,34 +170,20 @@ def send_one(args, prompt: str) -> ReqResult:
         else:
             result.output_tokens = output_tokens
             result.ok = True
-        return result
     except Exception as e:
-        result.e2e_s = time.perf_counter() - start
         result.error = repr(e)
-        return result
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
+    return result
 
 
 def warmup(args) -> None:
     """每档并发前发送少量小请求预热（不计入统计）"""
     for i in range(args.warmup):
         payload = build_payload(args.model, DEFAULT_PROMPTS[i % len(DEFAULT_PROMPTS)],
-                                max_tokens=4)
+                                max_tokens=4, fixed_output=False)
         try:
-            conn = make_conn(args.url, timeout=args.timeout)
-            conn.request("POST", "/v1/chat/completions",
-                         body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                         headers={"Content-Type": "application/json"})
-            resp = conn.getresponse()
-            resp.read()
-            conn.close()
-            if resp.status != 200:
-                print(f"[warmup] 第 {i + 1} 个预热请求返回 HTTP {resp.status}")
+            status, _ = post_json(args.url, payload, args.timeout)
+            if status != 200:
+                print(f"[warmup] 第 {i + 1} 个预热请求返回 HTTP {status}")
         except Exception as e:
             print(f"[warmup] 预热请求失败: {e!r}")
 
@@ -305,7 +292,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="LLM 服务性能测试：非流式 + 温度0 + 禁止思考，多档并发下的延迟/吞吐",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--url", default="http://localhost:8000", help="vLLM 服务地址")
+    parser.add_argument("--url", default="http://localhost:8000/v1/chat/completions",
+                        help="完整接口地址，直接使用你配置的 URL")
     parser.add_argument("--model", required=True, help="模型名，需与 /v1/models 返回的 id 一致")
     parser.add_argument("--concurrency", nargs="+", type=int,
                         default=[1, 5, 10, 20, 30], help="并发档位列表")
@@ -316,6 +304,9 @@ def main():
                         help="未指定 --total-requests 时，每档总请求数 = 并发数 × 该倍数")
     parser.add_argument("--max-tokens", type=int, default=256,
                         help="限制单请求输出长度（保证不同模型可比性）")
+    parser.add_argument("--no-fixed-output", action="store_true",
+                        help="不强制 min_tokens=max_tokens，允许模型自然提前停止"
+                             "（此时两模型输出量可能不同，E2E 不可比）")
     parser.add_argument("--warmup", type=int, default=3, help="每档并发前预热请求数")
     parser.add_argument("--timeout", type=float, default=600, help="单请求超时（秒）")
     parser.add_argument("--prompt-file", default=None,
@@ -336,7 +327,8 @@ def main():
               f"（如并发 1→{1 * args.requests_per_concurrency}，"
               f"并发 30→{30 * args.requests_per_concurrency}）")
     print(f"模式: 非流式  temperature: {TEMPERATURE}  思考模式: 关  "
-          f"prompt 池: {len(prompts)} 条（循环使用）  max_tokens: {args.max_tokens}")
+          f"prompt 池: {len(prompts)} 条（循环使用）  max_tokens: {args.max_tokens}  "
+          f"输出长度: {'固定 ' + str(args.max_tokens) + ' tokens' if not args.no_fixed_output else '自然停止'}")
 
     check_model_exists(args)
 
