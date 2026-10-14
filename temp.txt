@@ -1,25 +1,11 @@
-#!/bin/sh
-export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
-export TASK_QUEUE_ENABLE=1
-export HCCL_BUFFSIZE=1024
-export HCCL_OP_EXPANSION_MODE=AIV
-export OMP_PROC_BIND=false
-export OMP_NUM_THREADS=1
+还有一个问题，质检里有很多标点符号的报错，我们的业务不需要检查标点符号哪怕标点是错的，所以能否禁止检查标点呢。
+标点的报错我举两个例子：
+原文：整体改造方案如下表所示。请按表格提前整理并准备相关的数据和 MML 脚本。
+译文：The following table describes the overall reconstruction solution.Prepare relevant data and MML scripts according to the table.
+报错：标点后缺少空格：solution.Prepare 之间应该有一个空格
 
-vllm serve /data/models/Qwen3.8-27B \
---host 0.0.0.0 \
---port 9080 \
---tensor-parallel-size 4 \
---gpu-memory-utilization 0.9 \
---served-model-name Qwen3.8-27B \
---max-model-len 262144 \
---max-num-batched-tokens 8192 \
---max-num-seqs 32 \
---trust-remote-code \
---async-scheduling \
---no-enable-prefix-caching \
---default-chat-template-kwargs '{"enable_thinking": false}' \
---speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3,"enforce_eager":true}' \
---compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[4,8,12,16,20,24,28,32,40,48,56,64,72,80,88,96,104,112,120,128]}' \
---additional-config '{"weight_nz_mode":2,"enable_cpu_binding":true}' \
---model-loader-extra-config '{"enable_multithread_load":true,"num_threads":16}'
+原文：通道化指多路低速率 MAC 数据流共享一路或多路 PHY。
+译文：Channelization: allows multiple low-rate MAC data streams to share one or more PHYs.
+报错：标点错误：冒号使用不当，应该去掉冒号，使Channelization作为主语
+
+这些报错不管有没有道理都不要报出来，不要检查标点，错误里不要有任何和标点相关的东西

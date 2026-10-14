@@ -1,7 +1,3 @@
-
-
-
-
 ## 执行顺序：先串行准备 → 4 个检测 Agent **并行** → 串行汇总
 
 `TranslationQAChecker.check`（agent/base.py:149）的编排逻辑：
