@@ -15,6 +15,7 @@ repr（单引号、True/False/None），脚本用 ast.literal_eval 解析，并�
     --excel        Excel 文件路径（.xlsx）
     --sheet        工作表（序号或名称，默认 0 = 第一个）
     --column       列名（默认「请求」）
+    --type-column  错误类型列名（默认「问题类型」，列不存在时 error_type 记 null）
     --url          接口完整地址（默认 http://127.0.0.1:8000/api/v1/check）
     --concurrency  并发数（默认 5）
     --rounds       请求轮数：全部数据发完一轮再发下一轮（默认 1）
@@ -23,7 +24,8 @@ repr（单引号、True/False/None），脚本用 ast.literal_eval 解析，并�
     --limit        只取前 N 行数据（0 = 全部，用于冒烟）
 
 结果文件::
-    明细：<output>，JSONL，每行固定 4 个字段：round/row/status/resp。
+    明细：<output>，JSONL，每行固定 5 个字段：round/row/status/error_type/resp。
+          error_type 为 Excel「问题类型」列的值（每条都记录，列缺失时为 null）。
           resp 为模型返回的压缩结果：
           - final_has_errors：取自 data.summary.content（JSON 串）解析出的 final_has_error
           - accuracy/number/term/summary：各 agent 的错误描述（error_list 各条 error_desc
@@ -64,11 +66,11 @@ def get_session() -> requests.Session:
 
 # ---------------------------------------------------------------- 数据读取
 
-def load_requests(excel_path: str, column: str, sheet: Any,
-                  limit: int) -> Tuple[List[Tuple[int, dict]], List[dict]]:
-    """读取 Excel 指定列，返回 ([(Excel行号, 请求dict), ...], 解析失败列表)。
+def load_requests(excel_path: str, column: str, type_column: str, sheet: Any,
+                  limit: int) -> Tuple[List[Tuple[int, dict, Any]], List[dict]]:
+    """读取 Excel 指定列，返回 ([(Excel行号, 请求dict, 问题类型), ...], 解析失败列表)。
 
-    解析成功的请求强制 return_details=True。
+    解析成功的请求强制 return_details=True；问题类型列不存在时类型值记 None。
     """
     wb = load_workbook(excel_path, read_only=True, data_only=True)
     try:
@@ -79,8 +81,11 @@ def load_requests(excel_path: str, column: str, sheet: Any,
             col = headers.index(column)
         except ValueError:
             raise SystemExit(f"找不到列「{column}」，实际表头: {headers}")
+        type_col = headers.index(type_column) if type_column in headers else None
+        if type_col is None:
+            print(f"⚠ 未找到问题类型列「{type_column}」，error_type 将记为 null")
 
-        items: List[Tuple[int, dict]] = []
+        items: List[Tuple[int, dict, Any]] = []
         bad: List[dict] = []
         for row_no, row in enumerate(rows, start=2):  # 表头为第1行，数据从第2行起
             if limit and len(items) >= limit:
@@ -96,7 +101,8 @@ def load_requests(excel_path: str, column: str, sheet: Any,
                             "text_head": text[:120]})
                 continue
             payload["return_details"] = True
-            items.append((row_no, payload))
+            error_type = row[type_col] if type_col is not None and type_col < len(row) else None
+            items.append((row_no, payload, error_type))
         return items, bad
     finally:
         wb.close()
@@ -208,11 +214,11 @@ def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
 
 # ---------------------------------------------------------------- 轮次执行
 
-def run_round(url: str, items: List[Tuple[int, dict]], concurrency: int, timeout: float,
+def run_round(url: str, items: List[Tuple[int, dict, Any]], concurrency: int, timeout: float,
               round_no: int, rounds: int, out_file) -> Tuple[List[dict], float]:
     """并发发送一轮，逐条写入明细文件，返回 (结果列表, 耗时秒)。
 
-    明细行固定 4 个字段：round/row/status/resp（resp 为提取后的模型结果）；
+    明细行固定 5 个字段：round/row/status/error_type/resp（resp 为提取后的模型结果）；
     ok/latency/错误信息/统计挂在内存结果的下划线键下，仅供汇总与进度，不落盘。
     """
     results: List[dict] = []
@@ -220,20 +226,21 @@ def run_round(url: str, items: List[Tuple[int, dict]], concurrency: int, timeout
     step = max(1, total // 10)
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = {pool.submit(send_one, url, payload, timeout): row_no
-                   for row_no, payload in items}
+        futures = {pool.submit(send_one, url, payload, timeout): (row_no, error_type)
+                   for row_no, payload, error_type in items}
         for done, fut in enumerate(as_completed(futures), 1):
-            row_no = futures[fut]
+            row_no, error_type = futures[fut]
             rec = fut.result()
             detail, stats = extract_result(rec["resp"]) if rec["ok"] else (None, _EMPTY_STATS())
             item: Dict[str, Any] = {"round": round_no, "row": row_no,
-                                    "status": rec["status"], "resp": detail,
+                                    "status": rec["status"], "error_type": error_type,
+                                    "resp": detail,
                                     "_ok": rec["ok"], "_latency_ms": rec["latency_ms"],
                                     "_error": rec["error"], "_stats": stats}
             results.append(item)
             out_file.write(json.dumps(
-                {"round": item["round"], "row": item["row"],
-                 "status": item["status"], "resp": item["resp"]},
+                {"round": item["round"], "row": item["row"], "status": item["status"],
+                 "error_type": item["error_type"], "resp": item["resp"]},
                 ensure_ascii=False) + "\n")
             out_file.flush()
             if done % step == 0 or done == total:
@@ -293,6 +300,8 @@ def main() -> None:
     ap.add_argument("--excel", required=True, help="Excel 文件路径（.xlsx）")
     ap.add_argument("--sheet", default="0", help="工作表序号或名称（默认 0）")
     ap.add_argument("--column", default="请求", help="列名（默认「请求」）")
+    ap.add_argument("--type-column", default="问题类型",
+                    help="错误类型列名（默认「问题类型」，列不存在时 error_type 记 null）")
     ap.add_argument("--url", default="http://127.0.0.1:8000/api/v1/check",
                     help="接口完整地址")
     ap.add_argument("--concurrency", type=int, default=5, help="并发数（默认 5）")
@@ -305,7 +314,7 @@ def main() -> None:
 
     sheet: Any = int(args.sheet) if args.sheet.isdigit() else args.sheet
     print(f"读取 {args.excel} [sheet={sheet}] 列「{args.column}」 ...")
-    items, bad = load_requests(args.excel, args.column, sheet, args.limit)
+    items, bad = load_requests(args.excel, args.column, args.type_column, sheet, args.limit)
     print(f"有效请求 {len(items)} 条（已强制 return_details=True），解析失败 {len(bad)} 条")
     for b in bad[:10]:
         print(f"  ⚠ 第{b['row']}行: {b['error']}")
