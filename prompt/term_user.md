@@ -1,0 +1,71 @@
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验术语、缩写、设备型号一致性】
+每条句子包含：单行原文、单行待检译文、该行类型（title=标题，其余=正文）、该行上下文（该句在原文档中的上文/下文邻居句等）、该行检索参考术语（最多5条，可为空，逗号分隔）、该行Top3匹配参考平行语料（最多3条，可为空）
+⚠️ 标签铁律：句子中的所有标签/占位标记（如 <b>、<ph>、<xref/>、</b>、<x0/>、<ph0/>、<sub0>…</sub0>）是格式占位符——绝对不检查标签本身、绝对不在 error_desc 中写出任何标签（引用文字时把标签视作不存在，只抄文字）；三个 full_line 字段仍逐字保留标签。
+{sentence_block}
+
+### Few‑Shot 样例：无术语错误，输出空
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验术语、缩写、设备型号一致性】
+句子1：
+单行原文：该AAU支持LNR频段协同。
+单行待检译文：This AAU supports LNR band coordination.
+该行类型：p
+该行上下文：
+该行参考术语：AAU,LNR
+该行Top3参考平行语料：
+
+示例输出：
+{{
+    "has_error": false,
+    "error_list": []
+}}
+
+### Few‑Shot 示例：术语译法错误
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验术语、缩写、设备型号一致性】
+句子1：
+单行原文：设备支持SFP+光口。
+单行待检译文：The device supports SFP optical port.
+该行类型：p
+该行上下文：
+该行参考术语：SFP+
+该行Top3参考平行语料：
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "设备支持SFP+光口。",
+            "target_error_full_line": "The device supports SFP optical port.",
+            "target_correct_full_line": "The device supports SFP+ optical port.",
+            "error_desc": "1. 术语型号缩写译错：SFP 应为 SFP+（丢失加号）。",
+            "severity": "一般"
+        }}
+    ]
+}}
+
+### Few‑Shot 示例：标签不检查、error_desc 不带标签（标签内文字错误照常检出）
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验术语、缩写、设备型号一致性】
+句子1：
+单行原文：该单板提供<ph id='t1'>时钟同步</ph>功能。
+单行待检译文：This board provides the <ph id='t1'>timing alignment</ph> function.
+该行类型：p
+该行上下文：
+该行参考术语：时钟同步,clock synchronization
+该行Top3参考平行语料：
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "该单板提供<ph id='t1'>时钟同步</ph>功能。",
+            "target_error_full_line": "This board provides the <ph id='t1'>timing alignment</ph> function.",
+            "target_correct_full_line": "This board provides the <ph id='t1'>clock synchronization</ph> function.",
+            "error_desc": "1. 术语译错：时钟同步应译为 clock synchronization，译文译成 timing alignment。",
+            "severity": "一般"
+        }}
+    ]
+}}
