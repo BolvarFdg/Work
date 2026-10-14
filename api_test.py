@@ -167,12 +167,14 @@ def _agent_desc(content: Any) -> Optional[str]:
 def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
     """把接口响应提取成 (明细resp, 内部统计)。
 
-    明细resp：{final_has_errors, accuracy?, number?, term?, summary?}——
-    final_has_errors 取自 data.summary.content 解析结果；四个 agent 的错误描述
-    无值则不写、syntax 不统计。响应非法时返回 (None, 统计)。
+    明细resp：{final_has_errors, accuracy?, number?, term?, summary}——
+    final_has_errors 取自 data.summary.content 解析结果的 final_has_error
+    （content 为空/非 JSON/键缺失时为 null，原因记入统计）；accuracy/number/term
+    的错误描述无值则不写；summary 描述无条件写入（无值记 null）；syntax 不统计。
+    响应非法时返回 (None, 统计)。
     """
     stats: Dict[str, Any] = {"check_success": None, "final_has_error": None,
-                             "error_count": 0, "agent_failures": []}
+                             "error_count": 0, "agent_failures": [], "null_cause": None}
     if not isinstance(resp, dict):
         return None, stats
     data = resp.get("data") or {}
@@ -198,17 +200,19 @@ def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
         error_list = summary_parsed.get("error_list") or []
         stats["error_count"] = len(error_list)
         detail["final_has_errors"] = fhe
+        if fhe is None and "final_has_error" not in summary_parsed and "final_has_errors" not in summary_parsed:
+            stats["null_cause"] = "final_has_error键缺失"
     else:
         detail["final_has_errors"] = None
+        stats["null_cause"] = ("summary的content为空或缺失" if not (isinstance(content, str) and content)
+                               else "summary的content非合法JSON")
     for t in WRITTEN_AGENTS[:-1]:                     # accuracy / number / term
         a = data.get(t)
         src = a.get("content") if isinstance(a, dict) else None
         desc = _agent_desc(src)
         if desc:
             detail[t] = desc
-    summary_desc = _join_desc(summary_parsed.get("error_list")) if isinstance(summary_parsed, dict) else None
-    if summary_desc:
-        detail["summary"] = summary_desc
+    detail["summary"] = _join_desc(summary_parsed.get("error_list")) if isinstance(summary_parsed, dict) else None
     return detail, stats
 
 
@@ -253,7 +257,7 @@ def run_round(url: str, items: List[Tuple[int, dict, Any]], concurrency: int, ti
 
 def _EMPTY_STATS() -> dict:
     return {"check_success": None, "final_has_error": None,
-            "error_count": 0, "agent_failures": []}
+            "error_count": 0, "agent_failures": [], "null_cause": None}
 
 
 def summarize(results: List[dict], duration: float) -> dict:
@@ -263,12 +267,20 @@ def summarize(results: List[dict], duration: float) -> dict:
     def pct(p: float) -> Optional[int]:
         return lat[min(len(lat) - 1, int(len(lat) * p))] if lat else None
 
+    null_causes: Dict[str, int] = {}
+    for r in ok:
+        cause = r["_stats"].get("null_cause")
+        if r["_stats"].get("final_has_error") is None and cause:
+            null_causes[cause] = null_causes.get(cause, 0) + 1
+
     return {
         "requests": len(results),
         "http_ok": len(ok),
         "http_fail": len(results) - len(ok),
         "check_success": sum(1 for r in ok if r["_stats"].get("check_success") is True),
         "has_error": sum(1 for r in ok if r["_stats"].get("final_has_error") is True),
+        "final_null": sum(1 for r in ok if r["_stats"].get("final_has_error") is None),
+        "final_null_causes": null_causes,
         "error_count_total": sum(r["_stats"].get("error_count") or 0 for r in ok),
         "agent_failures": sum(1 for r in ok if r["_stats"].get("agent_failures")),
         "latency_ms": {"avg": round(sum(lat) / len(lat)) if lat else None,
