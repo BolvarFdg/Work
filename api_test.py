@@ -23,9 +23,13 @@ repr（单引号、True/False/None），脚本用 ast.literal_eval 解析，并�
     --limit        只取前 N 行数据（0 = 全部，用于冒烟）
 
 结果文件::
-    明细：<output>，JSONL，每行固定 4 个字段：round/row/status/resp；
-          resp 为接口返回的原始 JSON（原封不动，非 200 时为错误响应体，无响应时为 null）
-    汇总：<output>.summary.json，总体统计 + 各轮统计 + 跨轮一致性检查
+    明细：<output>，JSONL，每行固定 4 个字段：round/row/status/resp。
+          resp 为模型返回的压缩结果：
+          - final_has_errors：取自 data.summary.content（JSON 串）解析出的 final_has_error
+          - accuracy/number/term/summary：各 agent 的错误描述（error_list 各条 error_desc
+            拼接）；无错误、字段为空或 key 不存在则不写；syntax 不统计
+          请求失败（非 200 / 网络异常）时 resp 为 null
+    汇总：<output>.summary.json，总体统计 + 每轮统计（rounds 数组）+ 跨轮一致性检查
 
 依赖::
 
@@ -45,7 +49,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from openpyxl import load_workbook
 
-AGENTS = ("accuracy", "number", "term", "syntax", "summary")
+AGENTS = ("accuracy", "number", "term", "syntax", "summary")   # 内部统计用（含 syntax）
+WRITTEN_AGENTS = ("accuracy", "number", "term", "summary")     # 明细 resp 里记录的 agent（不含 syntax）
 
 _thread_local = threading.local()
 
@@ -108,7 +113,7 @@ def _parse_payload(text: str) -> Tuple[Optional[Any], Optional[str]]:
             return None, f"literal_eval/loads 均失败: {e}"
 
 
-# ---------------------------------------------------------------- 请求与内部统计
+# ---------------------------------------------------------------- 请求与结果提取
 
 def send_one(url: str, payload: dict, timeout: float) -> dict:
     """发送单个请求，返回 {ok, status, latency_ms, error, resp}。"""
@@ -121,10 +126,6 @@ def send_one(url: str, payload: dict, timeout: float) -> dict:
         rec["latency_ms"] = round((time.time() - t0) * 1000)
         if r.status_code != 200:
             rec["error"] = f"HTTP {r.status_code}: {r.text[:200]}"
-            try:
-                rec["resp"] = r.json()
-            except ValueError:
-                pass
         else:
             rec["resp"] = r.json()
             rec["ok"] = True
@@ -137,44 +138,82 @@ def send_one(url: str, payload: dict, timeout: float) -> dict:
     return rec
 
 
-def _stats_of(resp: Any) -> dict:
-    """从原始响应提取统计用字段（仅用于汇总，不写入明细文件）。"""
-    st: Dict[str, Any] = {"check_success": None, "final_has_error": None,
-                          "error_count": 0, "errors": [], "agent_failures": []}
+def _join_desc(error_list: Any) -> Optional[str]:
+    """拼接 error_list 各条的 error_desc；无有效描述返回 None。"""
+    if not isinstance(error_list, list):
+        return None
+    descs = [d.strip() for e in error_list
+             if isinstance(e, dict) and (d := (e.get("error_desc") or "")).strip()]
+    return "\n".join(descs) if descs else None
+
+
+def _agent_desc(content: Any) -> Optional[str]:
+    """从单个 agent 的 content（JSON 串）提取错误描述；无错/解析失败返回 None。"""
+    if not isinstance(content, str) or not content:
+        return None
+    try:
+        parsed = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return _join_desc(parsed.get("error_list"))
+
+
+def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
+    """把接口响应提取成 (明细resp, 内部统计)。
+
+    明细resp：{final_has_errors, accuracy?, number?, term?, summary?}——
+    final_has_errors 取自 data.summary.content 解析结果；四个 agent 的错误描述
+    无值则不写、syntax 不统计。响应非法时返回 (None, 统计)。
+    """
+    stats: Dict[str, Any] = {"check_success": None, "final_has_error": None,
+                             "error_count": 0, "agent_failures": []}
     if not isinstance(resp, dict):
-        return st
+        return None, stats
     data = resp.get("data") or {}
-    st["check_success"] = data.get("success")
+    stats["check_success"] = data.get("success")
     for t in AGENTS:
         a = data.get(t)
         if isinstance(a, dict) and a.get("success") is False:
-            st["agent_failures"].append(f"{t}: {a.get('error')}")
+            stats["agent_failures"].append(f"{t}: {a.get('error')}")
+
     summary = data.get("summary")
     content = summary.get("content") if isinstance(summary, dict) else summary
+    summary_parsed = None
     if isinstance(content, str) and content:
         try:
-            parsed = json.loads(content)
-            st["final_has_error"] = parsed.get("final_has_error")
-            error_list = parsed.get("error_list") or []
-            st["error_count"] = len(error_list)
-            st["errors"] = [
-                {"severity": e.get("severity"), "sources": e.get("sources"),
-                 "desc": (e.get("error_desc") or "")[:200]}
-                for e in error_list if isinstance(e, dict)
-            ]
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
-    return st
+            summary_parsed = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            summary_parsed = None
+
+    detail: Dict[str, Any] = {}
+    if isinstance(summary_parsed, dict):
+        fhe = summary_parsed.get("final_has_error", summary_parsed.get("final_has_errors"))
+        stats["final_has_error"] = fhe
+        error_list = summary_parsed.get("error_list") or []
+        stats["error_count"] = len(error_list)
+        detail["final_has_errors"] = fhe
+    else:
+        detail["final_has_errors"] = None
+    for t in WRITTEN_AGENTS[:-1]:                     # accuracy / number / term
+        a = data.get(t)
+        src = a.get("content") if isinstance(a, dict) else None
+        desc = _agent_desc(src)
+        if desc:
+            detail[t] = desc
+    summary_desc = _join_desc(summary_parsed.get("error_list")) if isinstance(summary_parsed, dict) else None
+    if summary_desc:
+        detail["summary"] = summary_desc
+    return detail, stats
 
 
 # ---------------------------------------------------------------- 轮次执行
 
 def run_round(url: str, items: List[Tuple[int, dict]], concurrency: int, timeout: float,
               round_no: int, rounds: int, out_file) -> Tuple[List[dict], float]:
-    """并发发送一轮，逐条把原始响应写入明细文件，返回 (结果列表, 耗时秒)。
+    """并发发送一轮，逐条写入明细文件，返回 (结果列表, 耗时秒)。
 
-    明细行固定 4 个字段：round/row/status/resp（resp 为接口原始返回）；
-    ok/latency/错误信息/统计字段挂在内存结果的下划线键下，仅供汇总与进度，不落盘。
+    明细行固定 4 个字段：round/row/status/resp（resp 为提取后的模型结果）；
+    ok/latency/错误信息/统计挂在内存结果的下划线键下，仅供汇总与进度，不落盘。
     """
     results: List[dict] = []
     total = len(items)
@@ -186,12 +225,11 @@ def run_round(url: str, items: List[Tuple[int, dict]], concurrency: int, timeout
         for done, fut in enumerate(as_completed(futures), 1):
             row_no = futures[fut]
             rec = fut.result()
+            detail, stats = extract_result(rec["resp"]) if rec["ok"] else (None, _EMPTY_STATS())
             item: Dict[str, Any] = {"round": round_no, "row": row_no,
-                                    "status": rec["status"], "resp": rec["resp"],
+                                    "status": rec["status"], "resp": detail,
                                     "_ok": rec["ok"], "_latency_ms": rec["latency_ms"],
-                                    "_error": rec["error"]}
-            if rec["ok"]:
-                item["_stats"] = _stats_of(rec["resp"])
+                                    "_error": rec["error"], "_stats": stats}
             results.append(item)
             out_file.write(json.dumps(
                 {"round": item["round"], "row": item["row"],
@@ -206,6 +244,11 @@ def run_round(url: str, items: List[Tuple[int, dict]], concurrency: int, timeout
     return results, time.time() - t0
 
 
+def _EMPTY_STATS() -> dict:
+    return {"check_success": None, "final_has_error": None,
+            "error_count": 0, "agent_failures": []}
+
+
 def summarize(results: List[dict], duration: float) -> dict:
     ok = [r for r in results if r["_ok"]]
     lat = sorted(r["_latency_ms"] for r in ok if r["_latency_ms"] is not None)
@@ -213,17 +256,14 @@ def summarize(results: List[dict], duration: float) -> dict:
     def pct(p: float) -> Optional[int]:
         return lat[min(len(lat) - 1, int(len(lat) * p))] if lat else None
 
-    def cnt(key: str) -> int:
-        return sum(1 for r in ok if r.get("_stats", {}).get(key) is True)
-
     return {
         "requests": len(results),
         "http_ok": len(ok),
         "http_fail": len(results) - len(ok),
-        "check_success": cnt("check_success"),
-        "has_error": cnt("final_has_error"),
-        "error_count_total": sum(r.get("_stats", {}).get("error_count") or 0 for r in ok),
-        "agent_failures": sum(1 for r in ok if r.get("_stats", {}).get("agent_failures")),
+        "check_success": sum(1 for r in ok if r["_stats"].get("check_success") is True),
+        "has_error": sum(1 for r in ok if r["_stats"].get("final_has_error") is True),
+        "error_count_total": sum(r["_stats"].get("error_count") or 0 for r in ok),
+        "agent_failures": sum(1 for r in ok if r["_stats"].get("agent_failures")),
         "latency_ms": {"avg": round(sum(lat) / len(lat)) if lat else None,
                        "p50": pct(0.5), "p95": pct(0.95),
                        "max": lat[-1] if lat else None},
@@ -236,12 +276,10 @@ def cross_round_consistency(results: List[dict]) -> dict:
     """多轮时检查同一条数据跨轮结果是否一致（temperature=0 + seed=42 理论上应一致）。"""
     by_row: Dict[int, set] = {}
     for r in results:
-        if not r["_ok"]:
+        if not r["_ok"] or r["resp"] is None:
             continue
-        st = r.get("_stats", {})
-        key = json.dumps({"final_has_error": st.get("final_has_error"),
-                          "errors": st.get("errors")}, ensure_ascii=False, sort_keys=True)
-        by_row.setdefault(r["row"], set()).add(key)
+        by_row.setdefault(r["row"], set()).add(
+            json.dumps(r["resp"], ensure_ascii=False, sort_keys=True))
     inconsistent = sorted(row for row, keys in by_row.items() if len(keys) > 1)
     return {"rows_compared": len(by_row),
             "inconsistent_rows": len(inconsistent),
@@ -261,7 +299,7 @@ def main() -> None:
     ap.add_argument("--rounds", type=int, default=1, help="请求轮数（默认 1）")
     ap.add_argument("--timeout", type=float, default=600, help="单请求超时秒数（默认 600）")
     ap.add_argument("--output", default="api_test_results.jsonl",
-                    help="结果明细文件路径（JSONL，resp 为原始返回）")
+                    help="结果明细文件路径（JSONL）")
     ap.add_argument("--limit", type=int, default=0, help="只取前 N 行（0=全部）")
     args = ap.parse_args()
 
@@ -280,6 +318,7 @@ def main() -> None:
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     all_results: List[dict] = []
+    round_stats: List[dict] = []
     started_at = time.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
@@ -291,8 +330,10 @@ def main() -> None:
                     args.url, items, args.concurrency, args.timeout,
                     round_no, args.rounds, out_file)
                 all_results.extend(results)
+                stats = summarize(results, duration)
+                round_stats.append({"round": round_no, **stats})
                 print(f"----- 第 {round_no} 轮统计 -----")
-                print(json.dumps(summarize(results, duration), ensure_ascii=False, indent=2))
+                print(json.dumps(stats, ensure_ascii=False, indent=2))
     except KeyboardInterrupt:
         print("\n⚠ 中断：明细已写入（逐条落盘），以下为部分汇总")
 
@@ -305,8 +346,8 @@ def main() -> None:
                    "return_details_forced": True},
         "valid_requests": len(items),
         "parse_failures": bad,
+        "rounds": round_stats,
         "total": summarize(all_results, 0) if all_results else None,
-        "detail_note": "明细文件每行固定 round/row/status/resp 四个字段，resp 为接口原始返回",
     }
     if args.rounds > 1 and all_results:
         final["cross_round_consistency"] = cross_round_consistency(all_results)
