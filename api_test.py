@@ -30,6 +30,13 @@ repr（单引号、True/False/None），脚本用 ast.literal_eval 解析，并�
           - final_has_errors：取自 data.summary.content（JSON 串）解析出的 final_has_error
           - accuracy/number/term/summary：各 agent 的错误描述（error_list 各条 error_desc
             拼接）；无错误、字段为空或 key 不存在则不写；syntax 不统计
+          - final_has_errors 为 null 时（summary 为空/非 JSON/缺键）：resp 整体替换为
+            接口返回的原始 JSON，原封不动，便于定位失败原因
+          请求失败（非 200 / 网络异常）时 resp 为 null
+          resp 为模型返回的压缩结果：
+          - final_has_errors：取自 data.summary.content（JSON 串）解析出的 final_has_error
+          - accuracy/number/term/summary：各 agent 的错误描述（error_list 各条 error_desc
+            拼接）；无错误、字段为空或 key 不存在则不写；syntax 不统计
           请求失败（非 200 / 网络异常）时 resp 为 null
     汇总：<output>.summary.json，总体统计 + 每轮统计（rounds 数组）+ 跨轮一致性检查
 
@@ -222,7 +229,8 @@ def run_round(url: str, items: List[Tuple[int, dict, Any]], concurrency: int, ti
               round_no: int, rounds: int, out_file) -> Tuple[List[dict], float]:
     """并发发送一轮，逐条写入明细文件，返回 (结果列表, 耗时秒)。
 
-    明细行固定 5 个字段：round/row/status/error_type/resp（resp 为提取后的模型结果）；
+    明细行固定 5 个字段：round/row/status/error_type/resp（resp 为提取后的模型结果；
+    final_has_errors 为 null 时 resp 替换为接口原始返回，原封不动）；
     ok/latency/错误信息/统计挂在内存结果的下划线键下，仅供汇总与进度，不落盘。
     """
     results: List[dict] = []
@@ -236,6 +244,8 @@ def run_round(url: str, items: List[Tuple[int, dict, Any]], concurrency: int, ti
             row_no, error_type = futures[fut]
             rec = fut.result()
             detail, stats = extract_result(rec["resp"]) if rec["ok"] else (None, _EMPTY_STATS())
+            if rec["ok"] and (detail is None or detail.get("final_has_errors") is None):
+                detail = rec["resp"]          # final 解析失败：整体保存原始返回
             item: Dict[str, Any] = {"round": round_no, "row": row_no,
                                     "status": rec["status"], "error_type": error_type,
                                     "resp": detail,
