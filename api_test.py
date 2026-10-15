@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -60,6 +61,33 @@ from openpyxl import load_workbook
 
 AGENTS = ("accuracy", "number", "term", "syntax", "summary")   # 内部统计用（含 syntax）
 WRITTEN_AGENTS = ("accuracy", "number", "term", "summary")     # 明细 resp 里记录的 agent（不含 syntax）
+
+_FENCE_HEAD_RE = re.compile(r"^\s*```[ \t]*[A-Za-z0-9_-]*[ \t]*\r?\n?")   # ```json / ``` python 等
+_FENCE_TAIL_RE = re.compile(r"\r?\n?[ \t]*```\s*$")
+
+
+def _loads_lenient(text: str) -> Any:
+    """容错解析模型返回的 JSON 字符串。
+
+    兼容三种非标准形态：markdown 代码围栏（```json\\n{...}\\n```）、
+    首尾空白、JSON 前后夹杂说明文字（截取首个 { 到末个 }）。
+    全部失败时抛 json.JSONDecodeError。
+    """
+    s = text.strip()
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+    if s.startswith("```"):
+        s = _FENCE_TAIL_RE.sub("", _FENCE_HEAD_RE.sub("", s)).strip()
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            pass
+    i, j = s.find("{"), s.rfind("}")
+    if 0 <= i < j:
+        return json.loads(s[i:j + 1])
+    raise json.JSONDecodeError("无法解析（含围栏剥离与花括号截取均失败）", s, 0)
 
 _thread_local = threading.local()
 
@@ -165,7 +193,7 @@ def _agent_desc(content: Any) -> Optional[str]:
     if not isinstance(content, str) or not content:
         return None
     try:
-        parsed = json.loads(content)
+        parsed = _loads_lenient(content)
     except (json.JSONDecodeError, TypeError):
         return None
     return _join_desc(parsed.get("error_list"))
@@ -196,7 +224,7 @@ def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
     summary_parsed = None
     if isinstance(content, str) and content:
         try:
-            summary_parsed = json.loads(content)
+            summary_parsed = _loads_lenient(content)
         except (json.JSONDecodeError, TypeError):
             summary_parsed = None
 
