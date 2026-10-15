@@ -1,9 +1,12 @@
+
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 每条句子包含：单行原文、单行待检译文、该行类型（title=标题，其余=正文）、该行上下文（该句在原文档中的上文/下文邻居句等）、该行检索参考术语（最多5条，可为空，逗号分隔）、该行Top3匹配参考平行语料（最多3条，可为空）
-⚠️ 标签铁律：句子中的所有标签/占位标记（如 <b>、<ph>、<xref/>、</b>、<x0/>、<ph0/>、<sub0>…</sub0>）是格式占位符——绝对不检查标签本身、绝对不在 error_desc 中写出任何标签（引用文字时把标签视作不存在，只抄文字）；三个 full_line 字段仍逐字保留标签。禁止「标签丢失/被替换/数量不一致/占位符语义丢失」类判定。
+⚠️ 标签铁律：句子中的所有标签/占位标记（如 <b></b>、<ph>、、</b>、、、<sub0>…</sub0>）是格式占位符——绝对不检查标签本身、绝对不在 error_desc 中写出任何标签（引用文字时把标签视作不存在，只抄文字）；三个 full_line 字段仍逐字保留标签。禁止「标签丢失/被替换/数量不一致/占位符语义丢失」类判定。
+⚠️ 语料铁律：该行Top3语料按内部翻译标准产出、正确率极高——译文与语料一致或相似（含多译法命中任一、片段级译法一致）即大概率正确，不得报错；语料只用于判对，不用于报错。
 {sentence_block}
 
 ### Few‑Shot 样例：无准确度错误，输出空
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -21,6 +24,7 @@
 }}
 
 ### Few‑Shot 样例：标题精简表达（标题允许省略冠词/虚词，不判漏译）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -38,6 +42,7 @@
 }}
 
 ### Few‑Shot 示例：度量术语译错（长度 → 大小/尺寸）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -63,6 +68,7 @@
 }}
 
 ### Few‑Shot 示例：位置限定词/基本术语译错（高 4 位→4 bits、状态位→status ID）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -88,6 +94,7 @@
 }}
 
 ### Few‑Shot 示例：主客体颠倒语义偏差（通信设备场景）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -113,6 +120,7 @@
 }}
 
 ### Few‑Shot 示例：标签不检查、error_desc 不带标签（标签内文字错误照常检出）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -138,18 +146,19 @@
 }}
 
 ### Few‑Shot 示例：源译文标签形态差异巨大时，只查文字、不比较标签、描述不带标签
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
-单行原文：<ph id="1"/>、<ph id="2"/> 多个元素参数一致
+单行原文：、 多个元素参数一致
 单行待检译文：Multi-group parameter <cmdname id="1">TEST CASE</cmdname>
 该行类型：p
 该行上下文：
 该行参考术语：
 该行Top3参考平行语料：
 句子2：
-单行原文：<ph id="3"/> 元素参数一致 relativepath01
-单行待检译文：<ph id="3"/> element parameters are consistent. testttttt space space
+单行原文： 元素参数一致 relativepath01
+单行待检译文： element parameters are consistent. testttttt space space
 该行类型：p
 该行上下文：
 该行参考术语：
@@ -161,8 +170,8 @@
     "error_list": [
         {{
             "source_full_line": "<ph id=\"1\"/>、<ph id=\"2\"/> 多个元素参数一致",
-            "target_error_full_line": "Multi-group parameter <cmdname id=\"1\">TEST CASE</cmdname>",
-            "target_correct_full_line": "The parameters of multiple elements are consistent <cmdname id=\"1\">TEST CASE</cmdname>",
+            "target_error_full_line": "Multi-group parameter <cmdname id=\"1\">TEST CASE",
+            "target_correct_full_line": "The parameters of multiple elements are consistent <cmdname id=\"1\">TEST CASE",
             "error_desc": "1. 语义歪曲：第1句「多个元素参数一致」被译成 Multi-group parameter，丢失「参数一致」的语义。",
             "severity": "一般"
         }},
@@ -177,6 +186,7 @@
 }}
 
 ### Few‑Shot 示例：结构转换不判漏译（名词化融入动词，含跳检上下文）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -195,6 +205,7 @@
 }}
 
 ### Few‑Shot 示例：程度缓和词省略不判漏译（"主要用于"→平铺陈述）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -210,4 +221,48 @@
 {{
     "has_error": false,
     "error_list": []
+}}
+
+### Few‑Shot 示例：译文与语料逐字一致即判对（告警名为约定译名）
+
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：DNS 服务器信令故障
+单行待检译文：All Links Disconnected in a DNS Server
+该行类型：title
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：[{{"source": "DNS 服务器信令故障", "target": "All Links Disconnected in a DNS Server"}}]
+
+示例输出：
+{{
+    "has_error": false,
+    "error_list": []
+}}
+
+### Few‑Shot 示例：语料无先例支持的译法照常判错（语料只用于判对）
+
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：该板卡支持热插拔电源模块。
+单行待检译文：This board supports hot standby power modules.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：[{{"source": "该板卡支持双电源冗余。", "target": "This board supports dual power redundancy."}}, {{"source": "电源模块支持在线更换。", "target": "The power module supports online replacement."}}]
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "该板卡支持热插拔电源模块。",
+            "target_error_full_line": "This board supports hot standby power modules.",
+            "target_correct_full_line": "This board supports hot-swappable power modules.",
+            "error_desc": "1. 错译：热插拔（hot swap）被译成 hot standby（热备），两者含义不同，且无语料先例支持该译法。",
+            "severity": "严重"
+        }}
+    ]
 }}
