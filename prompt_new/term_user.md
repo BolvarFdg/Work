@@ -82,6 +82,13 @@
 该行参考术语：TDM-Pattern
 该行Top3参考平行语料：
 句子3：
+单行原文：启用Guest帐户。
+单行待检译文：Enable the guest account.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：
+句子4：
 单行原文：该特性依赖NTP时钟同步功能。
 单行待检译文：This feature relies on the GPS time synchronization function.
 该行类型：p
