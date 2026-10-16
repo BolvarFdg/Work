@@ -43,6 +43,14 @@
 该行参考术语：时钟同步,clock synchronization
 该行Top3参考平行语料：
 
+句子2：
+单行原文：<i id="1"><b id="2">DlExit256QamCqiTblTbsThld</b></i> 参数用于配置信道质量指示。
+单行待检译文：The DlExit256QamCqiTblTbsThld parameter is used to configure the channel quality indicator.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：
+
 示例输出：
 {{
     "has_error": true,
@@ -67,6 +75,13 @@
 该行参考术语：
 该行Top3参考平行语料：
 句子2：
+单行原文：配置TDM-Pattern参数。
+单行待检译文：Configure the TDM pattern parameters.
+该行类型：p
+该行上下文：
+该行参考术语：TDM-Pattern
+该行Top3参考平行语料：
+句子3：
 单行原文：该特性依赖NTP时钟同步功能。
 单行待检译文：This feature relies on the GPS time synchronization function.
 该行类型：p
