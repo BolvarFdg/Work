@@ -17,6 +17,13 @@
 该行上下文：
 该行参考术语：
 该行Top3参考平行语料：
+句子3：
+单行原文：description TO-[对端设备]- 端口编号 - 端口带宽 // 配置端口描述
+单行待检译文：description TO-[peer device]-port number-port bandwidth //Configure an interface description.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：
 
 示例输出：
 {{
