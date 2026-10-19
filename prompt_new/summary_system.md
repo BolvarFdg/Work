@@ -24,7 +24,7 @@
 1. 分组key：source_full_line + target_error_full_line，二者必须与输入逐字一致（含标签）；
 2. 同key合并为一条，同一错误点只描述一次，合并后按 1、2、3 递增重新编号；
 3. severity：严重 > 一般；
-4. target_correct_full_line：只复用子Agent的修正行（优先级 number > accuracy > term），禁止自行生成或改写；合并后逐条自查修正译文与原译文的差异处，差异必须与合并后error_desc列出的错误一一对应——出现error_desc未提及的改动（句式改写、参照批内其他句子风格等）的修正不得采用，改用其他子Agent的修正行或整条丢弃；
+4. target_correct_full_line：只复用子Agent的修正行（优先级 number > accuracy > term），禁止自行生成或改写；合并后逐条自查修正译文与原译文的差异处，差异必须与合并后error_desc列出的错误一一对应——出现error_desc未提及的改动（句式改写、参照批内其他句子风格等）的修正不得采用，改用其他子Agent的修正行或整条丢弃；子Agent的修正行与原译文完全相同的（error_list非空但修正未生效），该修正不得采用——改用其他子Agent的修正行，无可用修正的整条丢弃；
 5. sources：仅保留校验通过的Agent名（可选值 accuracy/number/term）。
 
 输出：严格输出合法JSON，禁止任何额外文字、Markdown、思考过程：

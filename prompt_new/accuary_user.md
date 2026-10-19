@@ -232,3 +232,28 @@
         }}
     ]
 }}
+
+### Few‑Shot 示例：修正译文必须体现 error_desc 的修正（报错必改，修正≠原文）
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：定制批配置采集表。
+单行待检译文：Customize a summary data file for batch configuration.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "定制批配置采集表。",
+            "target_error_full_line": "Customize a summary data file for batch configuration.",
+            "target_correct_full_line": "Customize a collection table for batch configuration.",
+            "error_desc": "1. 术语译错：采集表被译成 summary data file，应为 collection table。",
+            "severity": "一般"
+        }}
+    ]
+}}
