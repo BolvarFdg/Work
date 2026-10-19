@@ -27,9 +27,8 @@ repr（单引号、True/False/None），脚本用 ast.literal_eval 解析，并�
     明细：<output>，JSONL，每行固定 5 个字段：round/row/status/error_type/resp。
           error_type 为 Excel「问题类型」列的值（每条都记录，列缺失时为 null）。
           resp 为模型返回的压缩结果：
-          - final_has_errors：取自 data.summary.content（JSON 串）解析出的 final_has_error
-          - accuracy/number/term/summary：各 agent 的错误描述（error_list 各条 error_desc
-            拼接）；无错误、字段为空或 key 不存在则不写；syntax 不统计
+          - final_has_errors=true：{"final_has_errors": true, "summary_content": "<原始JSON串>"}
+          - final_has_errors=false：{"final_has_errors": false}
           - final_has_errors 为 null 时（summary 为空/非 JSON/缺键）：resp 整体替换为
             接口返回的原始 JSON，原封不动，便于定位失败原因
           请求失败（非 200 / 网络异常）时 resp 为 null
@@ -188,24 +187,13 @@ def _join_desc(error_list: Any) -> Optional[str]:
     return "\n".join(descs) if descs else None
 
 
-def _agent_desc(content: Any) -> Optional[str]:
-    """从单个 agent 的 content（JSON 串）提取错误描述；无错/解析失败返回 None。"""
-    if not isinstance(content, str) or not content:
-        return None
-    try:
-        parsed = _loads_lenient(content)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return _join_desc(parsed.get("error_list"))
-
-
 def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
     """把接口响应提取成 (明细resp, 内部统计)。
 
-    明细resp：{final_has_errors, accuracy?, number?, term?, summary}——
-    final_has_errors 取自 data.summary.content 解析结果的 final_has_error
-    （content 为空/非 JSON/键缺失时为 null，原因记入统计）；accuracy/number/term
-    的错误描述无值则不写；summary 描述无条件写入（无值记 null）；syntax 不统计。
+    明细resp：
+    - final_has_errors=true：{"final_has_errors": true, "summary_content": "<原始JSON串>"}
+    - final_has_errors=false：{"final_has_errors": false}
+    - final_has_errors=null（content为空/非JSON/缺键）：resp 由调用方替换为接口原始返回
     响应非法时返回 (None, 统计)。
     """
     stats: Dict[str, Any] = {"check_success": None, "final_has_error": None,
@@ -232,22 +220,16 @@ def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
     if isinstance(summary_parsed, dict):
         fhe = summary_parsed.get("final_has_error", summary_parsed.get("final_has_errors"))
         stats["final_has_error"] = fhe
-        error_list = summary_parsed.get("error_list") or []
-        stats["error_count"] = len(error_list)
+        stats["error_count"] = len(summary_parsed.get("error_list") or [])
         detail["final_has_errors"] = fhe
+        if fhe is True:
+            detail["summary_content"] = content
         if fhe is None and "final_has_error" not in summary_parsed and "final_has_errors" not in summary_parsed:
             stats["null_cause"] = "final_has_error键缺失"
     else:
         detail["final_has_errors"] = None
         stats["null_cause"] = ("summary的content为空或缺失" if not (isinstance(content, str) and content)
                                else "summary的content非合法JSON")
-    for t in WRITTEN_AGENTS[:-1]:                     # accuracy / number / term
-        a = data.get(t)
-        src = a.get("content") if isinstance(a, dict) else None
-        desc = _agent_desc(src)
-        if desc:
-            detail[t] = desc
-    detail["summary"] = _join_desc(summary_parsed.get("error_list")) if isinstance(summary_parsed, dict) else None
     return detail, stats
 
 
