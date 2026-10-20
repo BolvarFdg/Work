@@ -257,3 +257,28 @@
         }}
     ]
 }}
+
+### Few‑Shot 示例：译文与语料高度相似但缺少内容——仍报漏译
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：因此，对于电信云未来长期演进的场景，如何提高管理架构中的功能交互简易性和可扩展性是亟需解决的问题。
+单行待检译文：Therefore, in a long-term evolution scenario in the future, how to improve function interaction simplicity and scalability in a management architecture is an urgent problem to be resolved.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：[{{"source": "因此，对于电信云未来长期演进的场景，如何提高管理架构中的功能交互简易性和可扩展性是亟需解决的问题。", "target": "Therefore, in a long-term evolution scenario of the telco cloud in the future, how to improve function interaction simplicity and scalability in a management architecture is an urgent problem to be resolved."}}]
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "因此，对于电信云未来长期演进的场景，如何提高管理架构中的功能交互简易性和可扩展性是亟需解决的问题。",
+            "target_error_full_line": "Therefore, in a long-term evolution scenario in the future, how to improve function interaction simplicity and scalability in a management architecture is an urgent problem to be resolved.",
+            "target_correct_full_line": "Therefore, in a long-term evolution scenario of the telco cloud in the future, how to improve function interaction simplicity and scalability in a management architecture is an urgent problem to be resolved.",
+            "error_desc": "1. 漏译：电信云在译文中缺失，应为 of the telco cloud。",
+            "severity": "一般"
+        }}
+    ]
+}}
