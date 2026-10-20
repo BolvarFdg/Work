@@ -1,7 +1,9 @@
+
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 每条句子包含：单行原文、单行待检译文、该行类型（title=标题，其余=正文）、该行上下文（该句在原文档中的上文/下文邻居句等）、该行检索参考术语（最多5条，可为空，逗号分隔）、该行Top3匹配参考平行语料（最多3条，可为空）
 
 ### Few‑Shot 样例：无错误，输出空
+
 示例输入：
 句子1：
 单行原文：该设备支持双频Wi-Fi传输。
@@ -32,6 +34,7 @@
 }}
 
 ### Few‑Shot 示例：度量术语与位置限定词译错（照常报）
+
 示例输入：
 句子1：
 单行原文：该参数的长度固定为 32 位。
@@ -70,6 +73,7 @@
 }}
 
 ### Few‑Shot 示例：结构转换与缓和词不判漏译
+
 示例输入：
 句子1：
 单行原文：公私网 IP 共用模式的选择，主要取决于 SIG 与 NAT 的部署位置关系。
@@ -93,17 +97,18 @@
 }}
 
 ### Few‑Shot 示例：标签不检查，只查文字
+
 示例输入：
 句子1：
-单行原文：<ph id="1"/>、<ph id="2"/> 多个元素参数一致
+单行原文：、 多个元素参数一致
 单行待检译文：Multi-group parameter <cmdname id="1">TEST CASE</cmdname>
 该行类型：p
 该行上下文：
 该行参考术语：
 该行Top3参考平行语料：
 句子2：
-单行原文：<ph id="3"/> 元素参数一致 relativepath01
-单行待检译文：<ph id="3"/> element parameters are consistent. testttttt space space
+单行原文： 元素参数一致 relativepath01
+单行待检译文： element parameters are consistent. testttttt space space
 该行类型：p
 该行上下文：
 该行参考术语：
@@ -115,8 +120,8 @@
     "error_list": [
         {{
             "source_full_line": "<ph id=\"1\"/>、<ph id=\"2\"/> 多个元素参数一致",
-            "target_error_full_line": "Multi-group parameter <cmdname id=\"1\">TEST CASE</cmdname>",
-            "target_correct_full_line": "The parameters of multiple elements are consistent <cmdname id=\"1\">TEST CASE</cmdname>",
+            "target_error_full_line": "Multi-group parameter <cmdname id=\"1\">TEST CASE",
+            "target_correct_full_line": "The parameters of multiple elements are consistent <cmdname id=\"1\">TEST CASE",
             "error_desc": "1. 语义歪曲：多个元素参数一致被译成 Multi-group parameter，丢失参数一致的语义。",
             "severity": "一般"
         }},
@@ -131,6 +136,7 @@
 }}
 
 ### Few‑Shot 示例：语料命中豁免、不一致作废、无先例真错照报
+
 示例输入：
 句子1：
 单行原文：DNS 服务器信令故障
@@ -169,6 +175,7 @@
 }}
 
 ### Few‑Shot 示例：大小写不报，内容错误照报
+
 示例输入：
 句子1：
 单行原文：启用Guest帐户。
@@ -201,7 +208,9 @@
 
 ⚠️ 禁止检查：标点空格、标签/占位符、单词大小写——任何情况不报；error_desc 直接写错误（哪里错、应为什么），禁止引用来源与禁止项内容。
 {sentence_block}
+
 ### Few‑Shot 示例：修正译文只改错误点，禁止参照批内其他句子改写句式
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -234,6 +243,7 @@
 }}
 
 ### Few‑Shot 示例：修正译文必须体现 error_desc 的修正（报错必改，修正≠原文）
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -259,6 +269,7 @@
 }}
 
 ### Few‑Shot 示例：译文与语料高度相似但缺少内容——仍报漏译
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -284,6 +295,7 @@
 }}
 
 ### Few‑Shot 示例：反向溯源——译文中多出原文没有的内容，照报增译
+
 示例输入：
 【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
 句子1：
@@ -303,6 +315,84 @@
             "target_error_full_line": "FO Copilot > Ticket processing",
             "target_correct_full_line": "Ticket processing",
             "error_desc": "1. 增译：FO Copilot > 在原文中无来源。",
+            "severity": "一般"
+        }}
+    ]
+}}
+
+### Few‑Shot 示例：残留词扫描——句中修饰语增译（and easily）
+
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：能够清晰描述利用哪些HIS平台服务和能力，解决过什么样问题。
+单行待检译文：Be able to clearly and easily describe the HIS platform services and capabilities used and what issues have been addressed.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：[{{"source": "能够清晰描述利用哪些HIS平台服务和能力，解决过什么样问题。", "target": "Be able to clearly describe the HIS platform services and capabilities used and what issues have been addressed."}}]
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "能够清晰描述利用哪些HIS平台服务和能力，解决过什么样问题。",
+            "target_error_full_line": "Be able to clearly and easily describe the HIS platform services and capabilities used and what issues have been addressed.",
+            "target_correct_full_line": "Be able to clearly describe the HIS platform services and capabilities used and what issues have been addressed.",
+            "error_desc": "1. 增译：and easily 在原文中无来源。",
+            "severity": "一般"
+        }}
+    ]
+}}
+
+### Few‑Shot 示例：残留词扫描——句首引导语增译（Note that）
+
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：1、iBMC版本低于5.70且CPLD版本低于4.00版本
+单行待检译文：1. Note that the iBMC version is earlier than 5.70 and the CPLD version is earlier than 4.00.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：[{{"source": "1、iBMC版本低于5.70且CPLD版本低于4.00版本", "target": "1. The iBMC version is earlier than 5.70 and the CPLD version is earlier than 4.00."}}]
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "1、iBMC版本低于5.70且CPLD版本低于4.00版本",
+            "target_error_full_line": "1. Note that the iBMC version is earlier than 5.70 and the CPLD version is earlier than 4.00.",
+            "target_correct_full_line": "1. The iBMC version is earlier than 5.70 and the CPLD version is earlier than 4.00.",
+            "error_desc": "1. 增译：Note that 在原文中无来源。",
+            "severity": "一般"
+        }}
+    ]
+}}
+
+### Few‑Shot 示例：残留词扫描——多余限定词增译（the latest）
+
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：建议升级到补丁版本 NCE V1R23C10SPC102。
+单行待检译文：It is advisable to upgrade it to the latest patch NCE V1R23C10SPC102.
+该行类型：p
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "建议升级到补丁版本 NCE V1R23C10SPC102。",
+            "target_error_full_line": "It is advisable to upgrade it to the latest patch NCE V1R23C10SPC102.",
+            "target_correct_full_line": "It is advisable to upgrade it to patch NCE V1R23C10SPC102.",
+            "error_desc": "1. 增译：the latest 在原文中无来源（原文未说最新）。",
             "severity": "一般"
         }}
     ]
