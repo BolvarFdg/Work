@@ -282,3 +282,28 @@
         }}
     ]
 }}
+
+### Few‑Shot 示例：反向溯源——译文中多出原文没有的内容，照报增译
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验语义与业务逻辑】
+句子1：
+单行原文：工单处理
+单行待检译文：FO Copilot > Ticket processing
+该行类型：title
+该行上下文：
+该行参考术语：
+该行Top3参考平行语料：[{{"source": "工单处理", "target": "Ticket Processing"}}]
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "工单处理",
+            "target_error_full_line": "FO Copilot > Ticket processing",
+            "target_correct_full_line": "Ticket processing",
+            "error_desc": "1. 增译：FO Copilot > 在原文中无来源。",
+            "severity": "一般"
+        }}
+    ]
+}}

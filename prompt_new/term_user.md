@@ -112,3 +112,27 @@
 
 ⚠️ 禁止检查：标点空格、标签/占位符、单词大小写——任何情况不报；error_desc 直接写错误（哪里错、应为什么），禁止引用来源与禁止项内容。
 {sentence_block}
+### Few‑Shot 示例：术语精确性——近义术语不等于正确术语
+示例输入：
+【批量待检句子列表，按文档先后顺序排列（因跳检未必连续）；每句的「该行上下文」=该句在原文档中的上文/下文邻居句等，可参考校验术语、缩写、设备型号一致性】
+句子1：
+单行原文：两台OSPF路由设备在二层相邻，并不意味着它们一定能够建立邻接关系。
+单行待检译文：two OSPF devices that are Layer 2 neighbors may not necessarily establish a neighbor relationship.
+该行类型：p
+该行上下文：
+该行参考术语：OSPF,邻接关系,adjacency
+该行Top3参考平行语料：
+
+示例输出：
+{{
+    "has_error": true,
+    "error_list": [
+        {{
+            "source_full_line": "两台OSPF路由设备在二层相邻，并不意味着它们一定能够建立邻接关系。",
+            "target_error_full_line": "two OSPF devices that are Layer 2 neighbors may not necessarily establish a neighbor relationship.",
+            "target_correct_full_line": "two OSPF devices that are Layer 2 neighbors may not necessarily establish an adjacency.",
+            "error_desc": "1. 术语错译：邻接关系应为 adjacency（OSPF 术语，与 neighbor 是不同概念），译文用了 neighbor relationship。",
+            "severity": "一般"
+        }}
+    ]
+}}
