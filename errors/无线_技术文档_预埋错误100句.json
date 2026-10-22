@@ -1,0 +1,1202 @@
+[
+  {
+    "source": "网络维护人员应每月对基站机房设备进行一次巡检。",
+    "target": "Network maintenance personnel should replace the equipment in the base station room once a month.",
+    "error_type": "错译",
+    "error_info": "巡检被误译为replace（更换）。巡检是指检查设备运行状态而非更换设备，应为inspect。"
+  },
+  {
+    "source": "该算法根据实时信道状况动态调整调制与编码方案。",
+    "target": "This algorithm dynamically adjusts the modulation and coding scheme according to the real-time channel bandwidth.",
+    "error_type": "错译",
+    "error_info": "信道状况被误译为channel bandwidth（信道带宽）。信道状况指信道的实时质量，与信道带宽是完全不同的概念，应为channel conditions。"
+  },
+  {
+    "source": "室内分布系统主要用于改善建筑物深处的信号覆盖。",
+    "target": "The indoor distribution system is mainly used to improve the signal interference deep inside buildings.",
+    "error_type": "错译",
+    "error_info": "信号覆盖被误译为signal interference（信号干扰）。覆盖与干扰含义完全不同，应为signal coverage。"
+  },
+  {
+    "source": "客户投诉主要集中在信号弱和上网速度慢两个方面。",
+    "target": "Customer complaints are mainly focused on weak signal and slow battery charging.",
+    "error_type": "错译",
+    "error_info": "上网速度慢被误译为slow battery charging（充电慢）。投诉内容被完全改变，应为slow internet access speed。"
+  },
+  {
+    "source": "测试报告中应详细记录每次呼叫建立的时间。",
+    "target": "The test report should record in detail the location of each call setup.",
+    "error_type": "错译",
+    "error_info": "呼叫建立的时间被误译为location（位置）。记录对象由时间变为位置，应为the time of each call setup。"
+  },
+  {
+    "source": "本安装手册面向网络规划工程师和现场施工人员。",
+    "target": "This installation manual is intended for network planning engineers and billing staff.",
+    "error_type": "错译",
+    "error_info": "现场施工人员被误译为billing staff（计费人员）。文档受众错误，应为field construction personnel。"
+  },
+  {
+    "source": "软件升级前必须备份基站当前的配置文件。",
+    "target": "Before the software upgrade, you must back up the current hardware inventory of the base station.",
+    "error_type": "错译",
+    "error_info": "配置文件被误译为hardware inventory（硬件清单）。备份对象错误，应为configuration file。"
+  },
+  {
+    "source": "所有测试数据必须在测试结束后立即上传至服务器保存。",
+    "target": "All test data must be deleted from the server immediately after the test.",
+    "error_type": "错译",
+    "error_info": "上传至服务器保存被误译为deleted from the server（从服务器删除）。两种操作含义完全不同，且删除测试数据会造成严重后果，应为uploaded to the server。"
+  },
+  {
+    "source": "采样后的中频信号需经过滤波以抑制带外杂散。",
+    "target": "The sampled intermediate frequency signal must be amplified to suppress out-of-band spurious emissions.",
+    "error_type": "错译",
+    "error_info": "经过滤波被误译为amplified（放大）。滤波与放大是两种不同的信号处理操作，放大带外杂散与抑制杂散的目的完全矛盾，应为filtered。"
+  },
+  {
+    "source": "考虑到夜间话务量较低，本次软件升级安排在凌晨执行。",
+    "target": "Considering the low traffic at night, this hardware expansion is scheduled for the early morning.",
+    "error_type": "错译",
+    "error_info": "软件升级被误译为hardware expansion（硬件扩容）。操作对象由软件变为硬件，应为software upgrade。"
+  },
+  {
+    "source": "新版本固件修复了前一版本中存在的多个缺陷。",
+    "target": "The new firmware version fixes several defects in the previous user manual.",
+    "error_type": "错译",
+    "error_info": "前一版本被误译为the previous user manual（前一版用户手册）。缺陷修复的对象是软件版本而非用户手册，应为the previous version。"
+  },
+  {
+    "source": "无线网络控制器负责管理其管辖范围内的所有基站。",
+    "target": "The radio network controller is responsible for managing all mobile phones within its jurisdiction.",
+    "error_type": "错译",
+    "error_info": "基站被误译为mobile phones（手机）。无线网络控制器管理的是基站而非手机，管理对象完全错误，应为base stations。"
+  },
+  {
+    "source": "基站选址时应与高压线路和加油站保持安全距离。",
+    "target": "When selecting base station sites, a safe distance from schools and hospitals should be maintained.",
+    "error_type": "错译",
+    "error_info": "高压线路和加油站被误译为schools and hospitals（学校和医院）。选址避让对象错误，应为high-voltage power lines and gas stations。"
+  },
+  {
+    "source": "巡检人员发现馈线接头存在进水现象。",
+    "target": "The inspection personnel found water ingress in the equipment room.",
+    "error_type": "错译",
+    "error_info": "馈线接头被误译为equipment room（机房）。进水位置错误，应为the feeder connector。"
+  },
+  {
+    "source": "该商圈小区的话务高峰出现在晚间20时至22时。",
+    "target": "The traffic peak of the cell in this business district occurs between 8:00 and 10:00 in the morning.",
+    "error_type": "错译",
+    "error_info": "晚间20时至22时被误译为早上8点至10点（8:00 to 10:00 in the morning）。话务高峰时段完全错误，应为from 20:00 to 22:00 in the evening。"
+  },
+  {
+    "source": "在参考信号接收功率低于-110 dBm的区域，终端无法稳定驻留。",
+    "target": "In areas where the reference signal received power is below -110 dBm, the terminal can camp stably.",
+    "error_type": "漏译",
+    "error_info": "遗漏否定词无法。语义由不能稳定驻留反转为能够稳定驻留，意思完全相反，应为cannot camp stably。"
+  },
+  {
+    "source": "该功能仅在独立组网（SA）模式下生效。",
+    "target": "This function takes effect in standalone (SA) networking mode.",
+    "error_type": "漏译",
+    "error_info": "遗漏限定词仅。丢失了其他模式下不生效的排他性含义，功能适用范围被扩大，应为takes effect only in standalone (SA) networking mode。"
+  },
+  {
+    "source": "未通过鉴权的终端不允许接入本网络。",
+    "target": "Terminals that have passed authentication are not allowed to access this network.",
+    "error_type": "漏译",
+    "error_info": "遗漏否定词未。被禁止接入的对象由未通过鉴权的终端变为通过鉴权的终端，完全相反，应为Terminals that fail authentication。"
+  },
+  {
+    "source": "主用设备故障期间，该区域业务由备用设备自动接管。",
+    "target": "All services in this area are automatically taken over by the standby equipment.",
+    "error_type": "漏译",
+    "error_info": "遗漏条件状语主用设备故障期间。备用设备接管失去了触发条件，变成了无条件发生的动作，应补译when the primary equipment fails。"
+  },
+  {
+    "source": "修改切换参数后需等待至少15分钟方可生效。",
+    "target": "After the handover parameters are modified, you need to wait at least 15 minutes.",
+    "error_type": "漏译",
+    "error_info": "遗漏关键信息方可生效。等待15分钟的目的丢失，句子语义不完整，应补译for the modification to take effect。"
+  },
+  {
+    "source": "只有当终端支持该频段时，界面才会显示相应的小区。",
+    "target": "The corresponding cells will be displayed when the terminal supports the band.",
+    "error_type": "漏译",
+    "error_info": "遗漏只有……才的必要条件关系。显示条件由必要条件弱化为一般条件，应译为Only when the terminal supports this band will the corresponding cells be displayed。"
+  },
+  {
+    "source": "请勿在天线正前方近距离区域长时间停留。",
+    "target": "Do not stay in front of the antenna for a long time.",
+    "error_type": "漏译",
+    "error_info": "遗漏电磁辐射安全警告中的关键限定词近距离。防护距离范围丢失，可能误导人员在危险距离内停留，应补译at close range。"
+  },
+  {
+    "source": "本技术规范同时适用于宏基站和室分系统两种部署场景。",
+    "target": "This technical specification applies to macro base station scenarios.",
+    "error_type": "漏译",
+    "error_info": "遗漏和室分系统。规范的适用范围被缩小了一半，应为applies to both macro base station and indoor distribution system scenarios。"
+  },
+  {
+    "source": "若终端在定时器超时前未收到响应，将重新发起随机接入过程。",
+    "target": "The terminal will re-initiate the random access procedure.",
+    "error_type": "漏译",
+    "error_info": "遗漏条件从句若终端在定时器超时前未收到响应。重新发起随机接入变成了无条件行为，应补译if no response is received before the timer expires。"
+  },
+  {
+    "source": "该小区已被列入高负荷扩容清单，本月不执行符号关断节能。",
+    "target": "This cell has been listed for capacity expansion due to high load.",
+    "error_type": "漏译",
+    "error_info": "遗漏后半句本月不执行符号关断节能。节能策略的关键操作信息完全丢失，应补译该内容。"
+  },
+  {
+    "source": "测试用例执行完毕后，需要同时保存日志文件和信令追踪记录。",
+    "target": "After the test cases are executed, the log files need to be saved.",
+    "error_type": "漏译",
+    "error_info": "遗漏和信令追踪记录。应保存的内容缺失了一半，应为save both the log files and the signaling trace records。"
+  },
+  {
+    "source": "本测试项的通过标准为丢包率不高于0.5%。",
+    "target": "The pass criterion of this test item is a packet loss rate of 0.5%.",
+    "error_type": "漏译",
+    "error_info": "遗漏不高于。通过标准由上限要求（不高于0.5%）变成了精确数值要求（等于0.5%），标准性质被改变，应为no higher than 0.5%。"
+  },
+  {
+    "source": "终端在空闲态只接收系统消息，不发送任何上行信号。",
+    "target": "In idle mode, the terminal only receives system messages.",
+    "error_type": "漏译",
+    "error_info": "遗漏不发送任何上行信号。终端空闲态的行为描述不完整，丢失了无上行发射这一关键特征，应补译without transmitting any uplink signals。"
+  },
+  {
+    "source": "本报告中的所有外场数据均为实测结果，未经任何人工修正。",
+    "target": "All field data in this report comes from actual measurements.",
+    "error_type": "漏译",
+    "error_info": "遗漏未经任何人工修正。数据可信度的重要声明丢失，应补译and has not been manually modified in any way。"
+  },
+  {
+    "source": "基站同步时钟源优先使用GPS信号，其次采用IEEE 1588协议。",
+    "target": "The base station clock synchronization prioritizes the GPS signal.",
+    "error_type": "漏译",
+    "error_info": "遗漏其次采用IEEE 1588协议。备用时钟源信息完全丢失，时钟同步配置描述不完整，应补译with IEEE 1588 as the backup clock source。"
+  },
+  {
+    "source": "该型号天线支持2.6 GHz频段。",
+    "target": "This antenna model supports the 2.6 GHz and 4.9 GHz frequency bands.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的4.9 GHz频段。产品支持的频段规格被扩大，属于虚假规格描述，应删除and 4.9 GHz。"
+  },
+  {
+    "source": "设备应在-40°C至+55°C的环境温度范围内正常工作。",
+    "target": "The equipment shall operate normally within an ambient temperature range of -40°C to +55°C and a humidity of up to 95%.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的湿度指标（湿度高达95%）。设备工作环境规格被凭空增加，应删除该湿度内容。"
+  },
+  {
+    "source": "本版本软件修复了切换过程中出现的信令冲突问题。",
+    "target": "This software release fixes the signaling conflict during handover and optimizes the paging response performance.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的优化寻呼响应性能。版本软件的功能范围被凭空扩大，应删除and optimizes the paging response performance。"
+  },
+  {
+    "source": "小区重选优先级参数影响终端开机后的驻留行为。",
+    "target": "The cell reselection priority parameter affects the camping behavior of terminals after power-on in NSA mode.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的限定条件in NSA mode（NSA模式）。参数适用范围被错误限定，应删除该条件。"
+  },
+  {
+    "source": "该干扰协调方案已完成实验室验证。",
+    "target": "This interference coordination scheme has passed both laboratory verification and field trials.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的field trials（外场试验）。方案验证的完成程度被夸大，应为has passed laboratory verification。"
+  },
+  {
+    "source": "波束赋形技术能够有效提升小区边缘用户的吞吐量。",
+    "target": "Beamforming technology can effectively improve the throughput of cell-edge users by 30%.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的具体数值by 30%（提升30%）。原文没有任何量化幅度，量化结论纯属捏造，应删除该数值。"
+  },
+  {
+    "source": "大规模MIMO技术通过多天线收发提升频谱效率。",
+    "target": "Massive MIMO technology improves spectral efficiency and reduces transmission latency through multi-antenna transmission and reception.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的功效reduces transmission latency（降低传输时延）。技术效果被凭空扩大，应删除and reduces transmission latency。"
+  },
+  {
+    "source": "建议将导频发射功率设置为厂家的默认配置。",
+    "target": "It is recommended to set the pilot transmit power to the vendor's default configuration of 15.2 dBm.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的具体数值15.2 dBm。原文未给出默认配置的具体取值，具体数值纯属捏造，应删除该数值。"
+  },
+  {
+    "source": "该特性需要核心网网元配合实现。",
+    "target": "This feature requires the cooperation of core network elements and terminal chipsets.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的配合方terminal chipsets（终端芯片）。实现依赖被凭空扩大，应删除and terminal chipsets。"
+  },
+  {
+    "source": "本次版本升级涉及基带处理单元的软件更新。",
+    "target": "This version upgrade involves software updates for the baseband processing unit and the RF unit.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的升级对象the RF unit（射频单元）。升级范围被凭空扩大，应删除and the RF unit。"
+  },
+  {
+    "source": "室外定位精度与基站部署密度密切相关。",
+    "target": "Outdoor positioning accuracy is closely related to base station density and transmit power.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的关联因素transmit power（发射功率）。影响定位精度的因素被凭空扩大，应删除and transmit power。"
+  },
+  {
+    "source": "网络切片技术可以为不同业务提供隔离的资源保障。",
+    "target": "Network slicing can provide isolated resource guarantees for different services in both 4G and 5G networks.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的范围限定in both 4G and 5G networks。原文未限定网络制式，且网络切片是5G的概念，应删除该限定。"
+  },
+  {
+    "source": "进行吞吐量测试时，请保持终端位置固定。",
+    "target": "When performing the throughput test, keep the terminal stationary and disable its screen auto-lock function.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的操作要求disable its screen auto-lock function（关闭屏幕自动锁定）。测试条件被凭空增加，应删除该要求。"
+  },
+  {
+    "source": "工程验收合格后，设备方可投入商用。",
+    "target": "The equipment has passed engineering acceptance and is now ready for commercial use.",
+    "error_type": "语义歪曲",
+    "error_info": "原文表示条件关系（验收合格是投入商用的前提，是否通过尚未确定），译文歪曲为既成事实（已通过验收并可商用）。应译为The equipment can be put into commercial use only after it passes engineering acceptance。"
+  },
+  {
+    "source": "增加天线阵子数量有望进一步提升系统覆盖能力。",
+    "target": "Increasing the number of antenna elements has further improved the system coverage capability.",
+    "error_type": "语义歪曲",
+    "error_info": "有望表示尚未实现的预期，译文用现在完成时has improved将其歪曲为已经实现的结果。应译为is expected to further improve。"
+  },
+  {
+    "source": "本次仿真实验旨在验证该算法在高速移动场景下的性能表现。",
+    "target": "This simulation has proven that the algorithm outperforms existing solutions in high-speed scenarios.",
+    "error_type": "语义歪曲",
+    "error_info": "原文说明实验目的（旨在验证性能表现），译文歪曲为实验结论（已证明该算法优于现有方案），且优于现有方案的对比结论纯属捏造。应译为aims to evaluate the performance of the algorithm。"
+  },
+  {
+    "source": "若该测试项不通过，应优先检查射频链路的连接状态。",
+    "target": "The failure of this test item was caused by a loose connection in the RF chain.",
+    "error_type": "语义歪曲",
+    "error_info": "原文是处理建议（测试不通过时应优先检查射频链路），译文歪曲为确定性故障定论（测试失败由射频链路松动导致）。故障原因被凭空认定。"
+  },
+  {
+    "source": "理论分析表明，大规模天线阵列可支持数十个用户层同时传输。",
+    "target": "Massive antenna arrays have been proven in commercial networks to support dozens of simultaneous user layers.",
+    "error_type": "语义歪曲",
+    "error_info": "原文仅限于理论分析层面的结论（理论分析表明），译文歪曲为已在商用网络中被证实的事实（have been proven in commercial networks）。结论的证实程度被严重夸大。"
+  },
+  {
+    "source": "天线隔离度不足可能是造成此次干扰的原因之一。",
+    "target": "Insufficient antenna isolation is the primary cause of this interference.",
+    "error_type": "语义歪曲",
+    "error_info": "原文是不确定性判断（可能是原因之一），译文歪曲为确定性定论（是主要原因）。原因的确定性和地位被改变，应为may be one of the causes。"
+  },
+  {
+    "source": "该参数的默认取值适用于大多数常规部署场景。",
+    "target": "The default value of this parameter is applicable to all deployment scenarios.",
+    "error_type": "语义歪曲",
+    "error_info": "原文限定为大多数常规部署场景，译文歪曲为所有部署场景（all deployment scenarios），适用范围被绝对化，应为most common deployment scenarios。"
+  },
+  {
+    "source": "规划报告预测该区域2028年数据流量将增长至当前的3倍。",
+    "target": "The planning report confirms that the data traffic in this region has grown to three times the current level.",
+    "error_type": "语义歪曲",
+    "error_info": "原文是对未来的预测（预测……将增长），译文用confirms和现在完成时has grown将其歪曲为已经发生并经证实的既成事实。应为predicts that the traffic will grow to three times。"
+  },
+  {
+    "source": "实验结果表明，该建筑材料对信号衰减的影响较小。",
+    "target": "Experimental results show that the building material eliminates signal attenuation.",
+    "error_type": "语义歪曲",
+    "error_info": "原文说影响较小（has little impact on），译文歪曲为消除（eliminates）信号衰减。影响程度被彻底改变，任何常规建筑材料都不可能消除信号衰减。"
+  },
+  {
+    "source": "运营商可根据话务潮汐效应关闭部分载波以降低能耗。",
+    "target": "Operators must shut down some carriers to reduce energy consumption according to traffic tides.",
+    "error_type": "语义歪曲",
+    "error_info": "原文中关闭部分载波是可选操作（可根据……），译文用must将其歪曲为强制要求。操作性质由可选变为强制，应为may shut down some carriers。"
+  },
+  {
+    "source": "本配置模板仅供参考，实际参数取值以现场勘测结果为准。",
+    "target": "This configuration template is for reference only, and field survey results should also be taken into account.",
+    "error_type": "语义歪曲",
+    "error_info": "原文规定现场勘测结果是最终依据（以……为准），译文歪曲为也应予以考虑（should also be taken into account），勘测结果的权威性被降低。应为the actual parameter values shall be determined by field survey results。"
+  },
+  {
+    "source": "天线下倾角设置过大会引发越区覆盖，造成邻区干扰恶化。",
+    "target": "An excessively large antenna downtilt helps enhance the coverage performance of neighboring cells.",
+    "error_type": "语义歪曲",
+    "error_info": "原文说明下倾角过大的危害（引发越区覆盖、邻区干扰恶化），译文歪曲为正面效果（有助于增强邻区覆盖性能），危害被说成了好处。"
+  },
+  {
+    "source": "本期工程新建站点200个，主要用于解决城区弱覆盖问题。",
+    "target": "In this phase, 200 new sites are constructed, mainly to increase the network capacity of the urban area.",
+    "error_type": "语义歪曲",
+    "error_info": "建站目的由解决弱覆盖问题（solve weak coverage）被歪曲为增加网络容量（increase network capacity），工程建设目的被改变。"
+  },
+  {
+    "source": "增大天线的电子下倾角可以收缩小区的覆盖范围。",
+    "target": "Increasing the electrical downtilt of the antenna can expand the coverage area of the cell.",
+    "error_type": "逻辑颠倒",
+    "error_info": "收缩被反向译为expand（扩大）。覆盖范围的变化方向完全相反，应为shrink the coverage area of the cell。"
+  },
+  {
+    "source": "工作频率越高，电磁波的空间传播损耗越大。",
+    "target": "The higher the operating frequency, the smaller the spatial propagation loss of electromagnetic waves.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越大被反向译为the smaller（越小）。频率与传播损耗的正相关关系被反转，应为the greater the spatial propagation loss。"
+  },
+  {
+    "source": "上行强干扰会导致基站接收灵敏度恶化。",
+    "target": "Strong uplink interference will improve the receiver sensitivity of the base station.",
+    "error_type": "逻辑颠倒",
+    "error_info": "恶化被反向译为improve（改善）。干扰对接收灵敏度的影响方向被反转，应为degrade the receiver sensitivity。"
+  },
+  {
+    "source": "终端应先完成小区搜索，之后再发起随机接入过程。",
+    "target": "The terminal should initiate the random access procedure first and then perform cell search.",
+    "error_type": "逻辑颠倒",
+    "error_info": "先小区搜索、后随机接入的流程顺序被完全颠倒，正确顺序应为perform cell search first and then initiate the random access procedure。"
+  },
+  {
+    "source": "在节能策略中，业务保障的优先级高于设备能耗。",
+    "target": "In the energy saving strategy, equipment power consumption has a higher priority than service assurance.",
+    "error_type": "逻辑颠倒",
+    "error_info": "优先级关系被颠倒。原文为业务保障优先于设备能耗，译文变为设备能耗优先于业务保障，应为service assurance has a higher priority than equipment power consumption。"
+  },
+  {
+    "source": "与室内穿墙场景相比，室外视距传播的穿透损耗可以忽略不计。",
+    "target": "Compared with indoor wall-penetration scenarios, the penetration loss in outdoor line-of-sight propagation is much more significant.",
+    "error_type": "逻辑颠倒",
+    "error_info": "可以忽略不计被反向译为much more significant（显著得多）。损耗程度的判断完全相反，应为negligible。"
+  },
+  {
+    "source": "小区接入用户数达到上限时，新的接入请求将被网络拒绝。",
+    "target": "When the number of accessed users in a cell reaches the upper limit, new access requests will be admitted by the network with priority.",
+    "error_type": "逻辑颠倒",
+    "error_info": "将被网络拒绝被反向译为will be admitted by the network with priority（被网络优先准入）。网络对新请求的处理结果完全相反，应为rejected by the network。"
+  },
+  {
+    "source": "基带处理单元负责基带信号处理，射频拉远单元负责射频信号收发。",
+    "target": "The baseband processing unit is responsible for radio frequency signal transmission and reception, while the RF remote unit is responsible for baseband signal processing.",
+    "error_type": "逻辑颠倒",
+    "error_info": "基带处理单元与射频拉远单元的职责分工被完全对调。基带单元被译为负责射频收发、射频单元被译为负责基带处理，与原文相反。"
+  },
+  {
+    "source": "在其他条件不变时，载波频率升高会导致覆盖半径减小。",
+    "target": "With other conditions unchanged, an increase in carrier frequency leads to a larger coverage radius.",
+    "error_type": "逻辑颠倒",
+    "error_info": "减小被反向译为a larger（增大）。频率与覆盖半径的关系被反转，应为a smaller coverage radius。"
+  },
+  {
+    "source": "为抑制乒乓切换，可适当增大切换迟滞门限。",
+    "target": "To suppress ping-pong handovers, the handover hysteresis threshold may be decreased appropriately.",
+    "error_type": "逻辑颠倒",
+    "error_info": "增大被反向译为decreased（减小）。参数调整方向完全相反，应为increased appropriately。"
+  },
+  {
+    "source": "基站发射功率提高后，覆盖范围扩大，但对邻近小区的同频干扰也随之增强。",
+    "target": "After the base station transmit power is increased, the coverage area expands, while the co-channel interference to neighboring cells decreases accordingly.",
+    "error_type": "逻辑颠倒",
+    "error_info": "也随之增强被反向译为decreases accordingly（随之降低）。发射功率与同频干扰的正相关关系被反转，应为increases accordingly。"
+  },
+  {
+    "source": "版本回退属于高风险操作，必须在业务低谷时段执行，严禁在话务高峰期进行。",
+    "target": "Version rollback is a high-risk operation and must be performed during traffic peak hours; it is strictly prohibited during low-traffic periods.",
+    "error_type": "逻辑颠倒",
+    "error_info": "允许执行时段与禁止时段被完全对调。原文要求在业务低谷时段执行、严禁在话务高峰期进行，译文变为必须在话务高峰期执行、严禁在低谷期进行。"
+  },
+  {
+    "source": "3.5 GHz频段的路径损耗大于2.6 GHz频段。",
+    "target": "The path loss in the 3.5 GHz band is smaller than that in the 2.6 GHz band.",
+    "error_type": "逻辑颠倒",
+    "error_info": "大于被反向译为smaller than（小于）。两个频段路径损耗的比较关系被反转，应为greater than。"
+  },
+  {
+    "source": "与透明传输模式相比，汇聚模式的数据传输效率更高。",
+    "target": "Compared with the transparent transmission mode, the aggregation mode has lower data transmission efficiency.",
+    "error_type": "逻辑颠倒",
+    "error_info": "更高被反向译为lower（更低）。两种模式传输效率的比较结果被反转，应为higher data transmission efficiency。"
+  },
+  {
+    "source": "终端通过随机接入过程获得与基站的上行同步。",
+    "target": "The terminal obtains uplink synchronization with the base station through the paging procedure.",
+    "error_type": "术语错误",
+    "error_info": "随机接入过程被误译为paging procedure（寻呼流程）。二者是完全不同的流程，上行同步通过随机接入建立，应为random access procedure。"
+  },
+  {
+    "source": "5G NR系统的下行链路采用CP-OFDM波形。",
+    "target": "The downlink of the 5G NR system adopts the CDMA waveform.",
+    "error_type": "术语错误",
+    "error_info": "CP-OFDM被误译为CDMA。CP-OFDM是基于OFDM的波形技术，与CDMA是完全不同的技术，5G NR下行采用的是CP-OFDM。"
+  },
+  {
+    "source": "源基站通过X2接口向目标基站发送切换请求消息。",
+    "target": "The source base station sends the handover request message to the target base station via the S1 interface.",
+    "error_type": "术语错误",
+    "error_info": "X2接口被误译为S1 interface。X2是基站之间的接口，S1是基站与核心网之间的接口，基站间切换请求应通过X2接口传输。"
+  },
+  {
+    "source": "终端只有在RRC连接态下才能被网络调度传输上行数据。",
+    "target": "The terminal can be scheduled to transmit uplink data only in the RRC idle state.",
+    "error_type": "术语错误",
+    "error_info": "RRC连接态被误译为RRC idle state（RRC空闲态）。空闲态与连接态是不同的协议状态，空闲态下终端不能被调度传输数据，应为RRC connected state。"
+  },
+  {
+    "source": "上行共享数据通过PUSCH信道承载传输。",
+    "target": "Uplink shared data is carried on the PDSCH.",
+    "error_type": "术语错误",
+    "error_info": "PUSCH被误译为PDSCH。PUSCH是物理上行共享信道，PDSCH是物理下行共享信道，信道方向错误，应为PUSCH。"
+  },
+  {
+    "source": "AMF网元负责接入和移动性管理功能。",
+    "target": "The AMF is responsible for session management functions.",
+    "error_type": "术语错误",
+    "error_info": "AMF的职责接入和移动性管理被误译为session management（会话管理）。会话管理是SMF的职责，AMF负责的是access and mobility management。"
+  },
+  {
+    "source": "Wi-Fi 6引入了BSS Coloring机制以降低同频干扰下的信道竞争冲突。",
+    "target": "Wi-Fi 6 introduces the RTS/CTS mechanism to reduce channel contention conflicts under co-channel interference.",
+    "error_type": "术语错误",
+    "error_info": "BSS Coloring被误译为RTS/CTS机制。二者是Wi-Fi中完全不同的技术机制，BSS Coloring是Wi-Fi 6新增的空间复用机制，应为BSS Coloring。"
+  },
+  {
+    "source": "蓝牙技术通过跳频方式规避同频段干扰。",
+    "target": "Bluetooth avoids interference in the same band through frequency division multiplexing.",
+    "error_type": "术语错误",
+    "error_info": "跳频被误译为frequency division multiplexing（频分复用）。蓝牙采用的是跳频技术，应为frequency hopping。"
+  },
+  {
+    "source": "Massive MIMO利用波束赋形将信号能量集中指向目标用户。",
+    "target": "Massive MIMO uses frequency diversity to concentrate signal energy towards the target user.",
+    "error_type": "术语错误",
+    "error_info": "波束赋形被误译为frequency diversity（频率分集）。二者是完全不同的技术，实现信号能量集中指向的是波束赋形，应为beamforming。"
+  },
+  {
+    "source": "广播信道采用QPSK调制以保证边缘覆盖性能。",
+    "target": "The broadcast channel uses 256QAM modulation to ensure edge coverage performance.",
+    "error_type": "术语错误",
+    "error_info": "QPSK被误译为256QAM。二者是不同的调制方式，广播信道为保证覆盖可靠性采用低阶调制QPSK，而非高阶调制256QAM。"
+  },
+  {
+    "source": "SRS参考信号用于上行信道质量的估计。",
+    "target": "The SRS is used for the estimation of downlink channel quality.",
+    "error_type": "术语错误",
+    "error_info": "SRS用于的上行信道估计被误译为downlink（下行）。SRS是上行探测参考信号，其估计对象是上行信道，应为uplink channel quality。"
+  },
+  {
+    "source": "接收端通过HARQ机制对出错的数据块进行重传合并处理。",
+    "target": "The receiver performs retransmission and combining of erroneous data blocks through the ARQ mechanism.",
+    "error_type": "术语错误",
+    "error_info": "HARQ被误译为ARQ。HARQ是混合自动重传请求（含软合并处理），ARQ是不含软合并的传统自动重传请求，二者是不同机制，应为HARQ。"
+  },
+  {
+    "source": "终端开机后首先读取主信息块以获取小区基本配置。",
+    "target": "After power-on, the terminal first reads the paging message to obtain the basic cell configuration.",
+    "error_type": "术语错误",
+    "error_info": "主信息块被误译为paging message（寻呼消息）。主信息块与寻呼消息是完全不同的消息类型，开机后首先读取的是主信息块，应为master information block (MIB)。"
+  },
+  {
+    "source": "基站通过PDCCH信道向终端下发下行调度信息。",
+    "target": "The base station sends downlink scheduling information to the terminal on the PUCCH.",
+    "error_type": "术语错误",
+    "error_info": "PDCCH被误译为PUCCH。PDCCH是物理下行控制信道，PUCCH是物理上行控制信道，信道方向错误，应为PDCCH。"
+  },
+  {
+    "source": "TD-LTE系统采用时分双工方式区分上行与下行传输。",
+    "target": "The TD-LTE system uses frequency division duplexing to separate uplink and downlink transmission.",
+    "error_type": "术语错误",
+    "error_info": "时分双工被误译为frequency division duplexing（频分双工）。TD-LTE中的TD即指时分双工，应为time division duplexing。"
+  },
+  {
+    "source": "建议将该小区的参考信号功率设置为-102 dBm。",
+    "target": "It is recommended to set the reference signal power of this cell to -112 dBm.",
+    "error_type": "数字错误",
+    "error_info": "原文数值-102 dBm被误译为-112 dBm。参考信号功率数值错误，应为-102 dBm。"
+  },
+  {
+    "source": "该基站单扇区的最大发射功率为80 W。",
+    "target": "The maximum transmit power of a single sector of this base station is 60 W.",
+    "error_type": "数字错误",
+    "error_info": "原文数值80 W被误译为60 W。发射功率数值错误，应为80 W。"
+  },
+  {
+    "source": "小区系统消息的默认调度周期为160 ms。",
+    "target": "The default scheduling period of the cell system message is 640 ms.",
+    "error_type": "数字错误",
+    "error_info": "原文数值160 ms被误译为640 ms。调度周期数值错误，应为160 ms。"
+  },
+  {
+    "source": "本期工程共部署AAU设备3200台。",
+    "target": "A total of 2,200 AAU devices are deployed in this phase of the project.",
+    "error_type": "数字错误",
+    "error_info": "原文数值3200台被误译为2,200台。设备部署数量错误，应为3,200。"
+  },
+  {
+    "source": "随机接入响应的接收窗口长度为10 ms。",
+    "target": "The receiving window for the random access response is 20 ms long.",
+    "error_type": "数字错误",
+    "error_info": "原文数值10 ms被误译为20 ms。接收窗口长度数值错误，应为10 ms。"
+  },
+  {
+    "source": "本小区配置的物理小区标识为125。",
+    "target": "The physical cell identifier configured for this cell is 215.",
+    "error_type": "数字错误",
+    "error_info": "原文数值125被误译为215。物理小区标识（PCI）数值错误，应为125。"
+  },
+  {
+    "source": "基站与射频拉远单元之间光纤的最大拉远距离为10 km。",
+    "target": "The maximum fiber pull distance between the base station and the RF remote unit is 40 km.",
+    "error_type": "数字错误",
+    "error_info": "原文数值10 km被误译为40 km。最大拉远距离数值错误，应为10 km。"
+  },
+  {
+    "source": "该测试项要求空口端到端时延小于20 ms。",
+    "target": "This test item requires an over-the-air end-to-end latency of less than 200 ms.",
+    "error_type": "数字错误",
+    "error_info": "原文数值20 ms被误译为200 ms。时延指标数值错误，应为20 ms。"
+  },
+  {
+    "source": "单台AAU设备的吊装重量约为40 kg。",
+    "target": "The hoisting weight of a single AAU unit is approximately 24 kg.",
+    "error_type": "数字错误",
+    "error_info": "原文数值40 kg被误译为24 kg。设备重量数值错误，应为40 kg。"
+  },
+  {
+    "source": "本次割接共影响基站12座，预计业务中断时长不超过30分钟。",
+    "target": "This cutover affects 12 base stations in total, with an expected service interruption time of no more than 13 minutes.",
+    "error_type": "数字错误",
+    "error_info": "原文数值30分钟被误译为13 minutes。业务中断时长数值错误，应为30 minutes。"
+  },
+  {
+    "source": "覆盖率验收标准为室外RSRP≥-110 dBm的区域占比达到95%。",
+    "target": "The coverage acceptance criterion is that areas with outdoor RSRP ≥ -110 dBm account for 89%.",
+    "error_type": "数字错误",
+    "error_info": "原文数值95%被误译为89%。覆盖率占比数值错误，应为95%。"
+  },
+  {
+    "source": "该款定向天线的水平半功率波束宽度为65度。",
+    "target": "The horizontal half-power beamwidth of this directional antenna is 105 degrees.",
+    "error_type": "数字错误",
+    "error_info": "原文数值65度被误译为105 degrees。波束宽度数值错误，应为65 degrees。"
+  },
+  {
+    "source": "该型号馈线在2600 MHz频点每100米的传输损耗约为6 dB。",
+    "target": "The transmission loss of this feeder type is about 16 dB per 100 meters at 2600 MHz.",
+    "error_type": "数字错误",
+    "error_info": "原文数值6 dB被误译为16 dB。馈线损耗数值错误，应为6 dB。"
+  },
+  {
+    "source": "基站接收机的热噪声底约为-174 dBm/Hz。",
+    "target": "The thermal noise floor of the base station receiver is about -147 dBm/Hz.",
+    "error_type": "数字错误",
+    "error_info": "原文数值-174 dBm/Hz被误译为-147 dBm/Hz。热噪声底数值错误，应为-174 dBm/Hz。"
+  },
+  {
+    "source": "终端功率等级2的最大发射功率为26 dBm。",
+    "target": "The maximum transmit power of power class 2 terminals is 62 dBm.",
+    "error_type": "数字错误",
+    "error_info": "原文数值26 dBm被误译为62 dBm。最大发射功率数值错误（62 dBm约合158 W，明显荒谬），应为26 dBm。"
+  },
+  {
+    "source": "天线抱杆安装完成后应进行垂直度校准。",
+    "target": "After the antenna mounting pole is installed, its length should be calibrated.",
+    "error_type": "错译",
+    "error_info": "垂直度被误译为length（长度）。校准对象是抱杆的垂直度而非长度，应为verticality。"
+  },
+  {
+    "source": "工程结束后需要恢复站点周边的道路和绿化。",
+    "target": "After the project is completed, the roads and landscaping around the site need to be demolished.",
+    "error_type": "错译",
+    "error_info": "恢复被误译为demolished（拆除）。原文要求恢复原貌，译文变为拆除，应为restored。"
+  },
+  {
+    "source": "每季度应对全网站点的备用发电机进行一次试机。",
+    "target": "The backup generators at all sites shall be replaced once every quarter.",
+    "error_type": "错译",
+    "error_info": "试机被误译为replaced（更换）。试机是启动设备测试运行状态而非更换设备，应为test-run。"
+  },
+  {
+    "source": "机房空调应保持全天候连续运转。",
+    "target": "The air conditioner in the equipment room should be inspected around the clock.",
+    "error_type": "错译",
+    "error_info": "保持连续运转被误译为inspected（巡检）。对空调的要求是持续运行而非持续巡检，应为operate continuously。"
+  },
+  {
+    "source": "铁塔攀爬作业人员必须佩戴安全带。",
+    "target": "Tower climbing workers must wear seat belts.",
+    "error_type": "错译",
+    "error_info": "高处作业安全带被误译为seat belts（汽车座椅安全带）。塔上作业佩戴的是全身式安全带，应为safety harnesses。"
+  },
+  {
+    "source": "防雷接地网应定期检测接地电阻并记录结果。",
+    "target": "The lightning protection grounding network should be visually checked regularly, and the results should be recorded.",
+    "error_type": "错译",
+    "error_info": "检测接地电阻被误译为visually checked（目视检查）。接地电阻必须用仪表测量，目视检查无法获得电阻值，应为tested for grounding resistance。"
+  },
+  {
+    "source": "高铁专网基站需沿铁路轨道呈链状部署。",
+    "target": "High-speed railway base stations need to be deployed in clusters along the railway track.",
+    "error_type": "错译",
+    "error_info": "链状部署被误译为deployed in clusters（成簇部署）。链状指沿轨道连续线性部署，与成簇部署是完全不同的组网形态，应为deployed in a chain。"
+  },
+  {
+    "source": "网优工程师通过路测采集网络覆盖数据。",
+    "target": "Optimization engineers collect network coverage data through laboratory simulations.",
+    "error_type": "错译",
+    "error_info": "路测被误译为laboratory simulations（实验室仿真）。路测是携带测试设备在现场实际道路上采集数据，应为drive tests。"
+  },
+  {
+    "source": "投诉处理时限为48小时，超时工单将自动升级。",
+    "target": "The complaint handling time limit is 48 hours, and overdue work orders will be automatically closed.",
+    "error_type": "错译",
+    "error_info": "自动升级被误译为automatically closed（自动关闭）。超时工单应升级处理而非被关闭，应为automatically escalated。"
+  },
+  {
+    "source": "验收测试大纲由建设单位、施工单位和监理单位三方共同确认。",
+    "target": "The acceptance test outline shall be confirmed jointly by the construction unit, the supervision unit, and the equipment vendor.",
+    "error_type": "错译",
+    "error_info": "施工单位被误译为equipment vendor（设备供应商）。三方主体中的施工单位应为the construction contractor。"
+  },
+  {
+    "source": "蓄电池后备时间应满足站点8小时供电需求。",
+    "target": "The battery backup time should meet the 8-hour lighting demand of the site.",
+    "error_type": "错译",
+    "error_info": "供电需求被误译为lighting demand（照明需求）。后备电源需保障的是站点全部设备供电而非仅照明，应为power supply demand。"
+  },
+  {
+    "source": "软件License按照激活小区数授权。",
+    "target": "Software licenses are granted based on the number of active users.",
+    "error_type": "错译",
+    "error_info": "激活小区数被误译为number of active users（激活用户数）。授权计量依据完全错误，应为the number of activated cells。"
+  },
+  {
+    "source": "设备加电前应确认市电引入已正常。",
+    "target": "Before the equipment is powered on, it should be confirmed that the mains power supply has been cut off.",
+    "error_type": "错译",
+    "error_info": "已正常被误译为has been cut off（已切断）。加电前的确认条件是市电供电正常而非断电，应为working properly。"
+  },
+  {
+    "source": "告警清除后，系统会自动向网管中心发送恢复通知。",
+    "target": "After the alarm is cleared, the system will automatically send a recovery notice to the billing center.",
+    "error_type": "错译",
+    "error_info": "网管中心被误译为billing center（计费中心）。恢复通知应发送给网管中心而非计费中心，应为the network management center。"
+  },
+  {
+    "source": "外来施工人员进入机房前须登记备案。",
+    "target": "External construction personnel must pay a deposit before entering the equipment room.",
+    "error_type": "错译",
+    "error_info": "登记备案被误译为pay a deposit（缴纳押金）。进入机房的要求是登记备案而非缴纳押金，应为register for the record。"
+  },
+  {
+    "source": "终端在弱信号条件下会自动降低调制阶数以维持链路稳定。",
+    "target": "The terminal reduces the modulation order to maintain link stability.",
+    "error_type": "漏译",
+    "error_info": "遗漏条件状语在弱信号条件下（under weak signal conditions）。降低调制阶数的触发条件丢失，变成无条件降低，应补译该条件。"
+  },
+  {
+    "source": "版本升级期间，该区域用户可能感知到短暂的业务中断。",
+    "target": "Users in this area may perceive a brief service interruption.",
+    "error_type": "漏译",
+    "error_info": "遗漏时间状语版本升级期间（during the version upgrade）。业务中断的发生场景丢失，变成无明确原因的中断，应补译during the version upgrade。"
+  },
+  {
+    "source": "本参数调整仅影响新建呼叫，不影响已建立的业务。",
+    "target": "This parameter adjustment only affects new calls.",
+    "error_type": "漏译",
+    "error_info": "遗漏不影响已建立的业务（and does not affect ongoing services）。影响范围的关键说明丢失，可能误导维护人员认为存量业务也受影响，应补译该内容。"
+  },
+  {
+    "source": "干扰排查应区分系统内干扰和外部干扰两类来源。",
+    "target": "Interference troubleshooting should distinguish the sources of interference.",
+    "error_type": "漏译",
+    "error_info": "遗漏系统内干扰和外部干扰两类（internal and external interference）。需要区分的干扰分类信息丢失，应补译internal and external interference。"
+  },
+  {
+    "source": "告警屏蔽操作必须由两人复核后方可生效。",
+    "target": "Alarm masking operations must be reviewed before taking effect.",
+    "error_type": "漏译",
+    "error_info": "遗漏由两人（by two persons）。双人复核这一关键管控要求丢失，变成单人复核即可生效，应补译by two persons。"
+  },
+  {
+    "source": "传输链路中断时，基站将进入孤岛运行模式。",
+    "target": "The base station will enter island mode.",
+    "error_type": "漏译",
+    "error_info": "遗漏条件状语传输链路中断时（when the transport link fails）。进入孤岛模式的触发条件丢失，变成无条件进入，应补译该条件。"
+  },
+  {
+    "source": "5G基站退服时，若4G共址站点正常，终端可回落至4G网络。",
+    "target": "When a 5G base station is out of service, terminals can fall back to the 4G network.",
+    "error_type": "漏译",
+    "error_info": "遗漏前提条件若4G共址站点正常（if the co-located 4G site is working properly）。回落4G的前提是共址4G站点正常，前提丢失后回落可行性被无条件化，应补译该条件。"
+  },
+  {
+    "source": "变更邻区关系前必须先导出当前配置并存档。",
+    "target": "Before changing neighbor cell relations, you must export the current configuration.",
+    "error_type": "漏译",
+    "error_info": "遗漏并存档（and archive it）。配置存档要求丢失，仅导出不存档无法满足回退需要，应补译and archive it。"
+  },
+  {
+    "source": "语音业务承载建立失败时，系统将统计相应的失败原因。",
+    "target": "The system will collect statistics on failure causes.",
+    "error_type": "漏译",
+    "error_info": "遗漏条件状语语音业务承载建立失败时（when a voice bearer setup fails）。统计行为的触发条件丢失，应补译该条件。"
+  },
+  {
+    "source": "该测量项在连接态和空闲态下均可上报。",
+    "target": "This measurement item can be reported in connected mode.",
+    "error_type": "漏译",
+    "error_info": "遗漏和空闲态（and in idle mode）。测量上报能力范围被缩小，应补译and in idle mode。"
+  },
+  {
+    "source": "施工单位须在割接前一周提交停机申请。",
+    "target": "The construction unit shall submit an outage application before the cutover.",
+    "error_type": "漏译",
+    "error_info": "遗漏前一周（one week in advance）。停机申请的提前时限要求丢失，应补译one week before the cutover。"
+  },
+  {
+    "source": "未配置邻区关系的边界小区，终端无法完成切换。",
+    "target": "For border cells with neighbor relations configured, terminals cannot complete handover.",
+    "error_type": "漏译",
+    "error_info": "遗漏否定词未。终端无法切换的原因是未配置邻区关系，译文变为配置了邻区关系，条件完全相反，应为border cells without neighbor relations configured。"
+  },
+  {
+    "source": "蓄电池单体电压低于2 V时必须立即更换该组电池。",
+    "target": "When the battery cell voltage is below 2 V, the battery pack should be replaced.",
+    "error_type": "漏译",
+    "error_info": "遗漏立即（immediately）。更换电池的紧迫性要求丢失，应补译immediately。"
+  },
+  {
+    "source": "驻波比告警持续超过30分钟才会被判定为硬件故障。",
+    "target": "A VSWR alarm is classified as a hardware failure.",
+    "error_type": "漏译",
+    "error_info": "遗漏持续超过30分钟才会（only if it lasts for more than 30 minutes）。硬件故障的判定条件丢失，告警一出现即被判为硬件故障，应补译only if it persists for more than 30 minutes。"
+  },
+  {
+    "source": "含客户数据的存储介质报废前必须进行物理销毁。",
+    "target": "Storage media containing customer data must be physically destroyed.",
+    "error_type": "漏译",
+    "error_info": "遗漏报废前（before disposal）。物理销毁的时点要求丢失，变成无条件销毁，应补译before disposal。"
+  },
+  {
+    "source": "该小区已开通VoLTE业务。",
+    "target": "VoLTE, VoNR, and emergency call services have been activated for this cell.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的VoNR和紧急呼叫业务。小区业务开通范围被扩大，应仅为VoLTE。"
+  },
+  {
+    "source": "单站验证内容包括接入、切换和寻呼测试。",
+    "target": "Single-site verification includes access, handover, paging, and throughput tests.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的吞吐量测试（throughput tests）。验证项目被凭空增加，应删除and throughput tests。"
+  },
+  {
+    "source": "本期工程包含站点土建和设备安装两部分内容。",
+    "target": "This phase of the project includes site civil works, equipment installation, and fiber laying.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的光纤敷设（fiber laying）。工程范围被凭空扩大，应删除and fiber laying。"
+  },
+  {
+    "source": "告警级别分为紧急、重要、次要三级。",
+    "target": "Alarm severities are classified into four levels: critical, major, minor, and warning.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的warning（提示）级别。告警分级由三级变为四级，应为three levels: critical, major, and minor。"
+  },
+  {
+    "source": "该单板支持热插拔。",
+    "target": "This board supports hot swapping without interrupting services.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的特性without interrupting services（不影响业务）。原文仅说明支持热插拔，未对业务影响作任何承诺，应删除该内容。"
+  },
+  {
+    "source": "维护单位在夜间执行基站设备巡检。",
+    "target": "The maintenance unit performs base station equipment inspection and asset inventory at night.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的资产盘点（asset inventory）。夜间工作内容被扩大，应删除and asset inventory。"
+  },
+  {
+    "source": "该设备支持壁挂安装方式。",
+    "target": "This device supports both wall-mounted and pole-mounted installation.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的抱杆安装方式（pole-mounted）。设备安装方式被扩大，应删除and pole-mounted。"
+  },
+  {
+    "source": "传输资源配置由脚本自动下发。",
+    "target": "Transport resource configuration is automatically delivered by scripts, with manual double-check afterwards.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的后续人工复核环节（manual double-check afterwards）。操作流程被凭空增加，应删除该内容。"
+  },
+  {
+    "source": "该频段部署采用4T4R射频配置。",
+    "target": "The deployment in this band adopts a 4T4R RF configuration with 320 W transmit power.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的发射功率规格320 W。射频配置描述被凭空增加功率参数，应删除with 320 W transmit power。"
+  },
+  {
+    "source": "基站软件版本应与核心网版本保持兼容。",
+    "target": "The base station software version shall remain compatible with the core network and terminal versions.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的终端版本兼容要求。兼容性对象被扩大，应仅为with the core network version。"
+  },
+  {
+    "source": "小区去激活操作不会删除任何配置数据。",
+    "target": "Cell deactivation will not delete any configuration data or performance counters.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的性能计数器（performance counters）说明。原文仅说明配置数据不受影响，应删除or performance counters。"
+  },
+  {
+    "source": "高危操作包括网元整站重启和批量参数修改。",
+    "target": "High-risk operations include full-site restart of network elements, batch parameter modification, and cutover.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的割接（cutover）。高危操作清单被扩大，应删除and cutover。"
+  },
+  {
+    "source": "建议在业务空闲期执行本操作。",
+    "target": "It is recommended to perform this operation during idle periods and notify affected customers in advance.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的提前通知受影响客户的要求。操作前提被凭空增加，应删除and notify affected customers in advance。"
+  },
+  {
+    "source": "频谱扫描发现疑似干扰信号，需进一步定位确认。",
+    "target": "The suspected interference signal has been located and confirmed by spectrum scanning.",
+    "error_type": "语义歪曲",
+    "error_info": "原文状态为疑似、待定位确认（需进一步定位确认），译文歪曲为已定位并确认。干扰处理进度被虚构为已完成。"
+  },
+  {
+    "source": "网络投诉率与上月基本持平。",
+    "target": "Network complaint rates have dropped significantly compared with last month.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为与上月基本持平（remains roughly flat），译文歪曲为显著下降（dropped significantly）。数据结论被完全改变。"
+  },
+  {
+    "source": "干扰协调以小区间自动协调为主，人工干预为辅。",
+    "target": "Interference coordination relies entirely on manual intervention.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为自动协调为主、人工为辅，译文歪曲为完全依靠人工干预。干扰协调机制被彻底改变。"
+  },
+  {
+    "source": "站点租赁合同到期后是否续签，视业务需求而定。",
+    "target": "The site lease contract will be renewed upon expiration.",
+    "error_type": "语义歪曲",
+    "error_info": "原文是否续签尚未确定（视业务需求而定），译文歪曲为到期后必将续签的确定结论。"
+  },
+  {
+    "source": "该指标当前处于正常范围。",
+    "target": "This indicator is currently the best in the network.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为处于正常范围（within the normal range），译文歪曲为全网最优（the best in the network）。正常水平被夸大为网络标杆。"
+  },
+  {
+    "source": "两个方案各有优劣，需结合成本综合评估后确定。",
+    "target": "Both schemes are equally effective and can be adopted directly.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为各有优劣、需综合评估后确定，译文歪曲为两方案同等有效、可直接采用。方案评估和决策流程被取消。"
+  },
+  {
+    "source": "该区域5G覆盖已基本连续，个别楼宇室内仍存在弱覆盖。",
+    "target": "5G coverage in this area is fully continuous, both outdoors and indoors.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为基本连续且个别楼宇室内存在弱覆盖，译文歪曲为室内外完全连续。覆盖现状中的缺陷被掩盖并拔高。"
+  },
+  {
+    "source": "现网版本与目标版本之间存在已知兼容性问题，正在评估规避方案。",
+    "target": "The compatibility issue between the live network version and the target version has been resolved.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为存在已知兼容性问题且规避方案仍在评估中，译文歪曲为问题已解决。处理状态由进行中被虚构为已完成。"
+  },
+  {
+    "source": "本次扩容可以缓解高负荷问题，彻底解决仍需新增站点。",
+    "target": "This capacity expansion will completely solve the high-load problem, and no new sites are needed.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为扩容仅能缓解、彻底解决仍需新增站点，译文歪曲为扩容可彻底解决且无需新增站点。扩容效果与后续建站需求均被改变。"
+  },
+  {
+    "source": "外部干扰源初步判断为非法信号放大器，尚待监管部门确认。",
+    "target": "The external interference source has been confirmed by the regulator to be an illegal signal amplifier.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为初步判断、尚待监管部门确认，译文歪曲为已获监管部门确认。干扰源的认定状态由待确认被虚构为已确认。"
+  },
+  {
+    "source": "无源器件更换操作简单，但建议由专业人员执行。",
+    "target": "Passive devices are maintenance-free and never need replacement.",
+    "error_type": "语义歪曲",
+    "error_info": "原文说明更换操作简单且建议由专业人员执行，译文歪曲为免维护、无需更换。器件的维护特性被完全改变。"
+  },
+  {
+    "source": "由于地处山区，部分站点传输建设存在一定困难。",
+    "target": "The transport construction of some sites has failed due to the mountainous terrain.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为存在一定困难（faces certain difficulties），译文歪曲为已经失败（has failed）。工程状态由存在困难被歪曲为建设失败。"
+  },
+  {
+    "source": "设备理论寿命为15年，实际寿命受环境条件影响。",
+    "target": "The equipment has a service life of 15 years regardless of environmental conditions.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为理论寿命15年且实际寿命受环境影响，译文歪曲为不受环境影响的确定寿命。寿命结论的适用条件被改变。"
+  },
+  {
+    "source": "多普勒频移随终端移动速度的增加而增大。",
+    "target": "The Doppler shift decreases as the mobile speed of the terminal increases.",
+    "error_type": "逻辑颠倒",
+    "error_info": "增大被反向译为decreases（减小）。多普勒频移与移动速度的正相关关系被反转，应为increases。"
+  },
+  {
+    "source": "天线增益越高，覆盖距离越远。",
+    "target": "The higher the antenna gain, the shorter the coverage distance.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越远被反向译为the shorter（越近）。天线增益与覆盖距离的正相关关系被反转，应为the farther。"
+  },
+  {
+    "source": "信道带宽越大，可支持的峰值速率越高。",
+    "target": "The larger the channel bandwidth, the lower the peak rate that can be supported.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越高被反向译为the lower（越低）。信道带宽与峰值速率的正相关关系被反转，应为the higher。"
+  },
+  {
+    "source": "去激活流程中，应先释放专用承载，再释放默认承载。",
+    "target": "In the deactivation procedure, the default bearer should be released first, and then the dedicated bearers.",
+    "error_type": "逻辑颠倒",
+    "error_info": "承载释放顺序被颠倒。原文为先释放专用承载、后释放默认承载，译文顺序完全相反。"
+  },
+  {
+    "source": "承载建立时应先完成资源预留，再激活用户面传输。",
+    "target": "During bearer setup, user plane transport should be activated first and then resources are reserved.",
+    "error_type": "逻辑颠倒",
+    "error_info": "流程顺序被颠倒。原文为先完成资源预留、后激活用户面传输，译文顺序完全相反。"
+  },
+  {
+    "source": "机房空调加湿功能在冬季开启，除湿功能在夏季开启。",
+    "target": "The humidification function of the equipment room air conditioner is enabled in summer, and the dehumidification function is enabled in winter.",
+    "error_type": "逻辑颠倒",
+    "error_info": "加湿与除湿功能的启用季节被完全对调。原文为冬季加湿、夏季除湿，译文正好相反。"
+  },
+  {
+    "source": "扩容工程应先完成电源系统改造，后安装主设备。",
+    "target": "In the capacity expansion project, the main equipment should be installed first, and then the power system is upgraded.",
+    "error_type": "逻辑颠倒",
+    "error_info": "工程施工顺序被颠倒。原文为先改造电源系统、后安装主设备，译文完全相反。"
+  },
+  {
+    "source": "电调天线的下倾角可远程调整，无需上塔作业。",
+    "target": "The downtilt of the RET antenna can only be adjusted by climbing the tower.",
+    "error_type": "逻辑颠倒",
+    "error_info": "可远程调整被反向译为只能上塔调整。电调天线的核心特性即远程调整倾角，应为adjusted remotely without tower climbing。"
+  },
+  {
+    "source": "隧道场景中泄漏电缆应沿隧道顶部敷设。",
+    "target": "In tunnel scenarios, the leaky cable should be laid along the tunnel floor.",
+    "error_type": "逻辑颠倒",
+    "error_info": "隧道顶部被反向译为tunnel floor（隧道地面）。敷设位置完全相反，应为along the tunnel ceiling。"
+  },
+  {
+    "source": "全向天线在水平面无方向性，定向天线在水平面有方向性。",
+    "target": "Omnidirectional antennas are directional in the horizontal plane, while directional antennas are not.",
+    "error_type": "逻辑颠倒",
+    "error_info": "全向天线与定向天线的方向性定义被完全对调，两类天线的特性描述互相颠倒。"
+  },
+  {
+    "source": "上行链路受限通常源于基站接收链路，下行链路受限通常源于基站发射链路。",
+    "target": "Uplink limitation usually originates from the base station transmit chain, while downlink limitation usually originates from the receive chain.",
+    "error_type": "逻辑颠倒",
+    "error_info": "上下行受限与收发链路的对应关系被对调。原文为上行受限源于接收链路、下行受限源于发射链路，译文正好相反。"
+  },
+  {
+    "source": "小区负载越高，可分配给新用户的资源越少。",
+    "target": "The higher the cell load, the more resources can be allocated to new users.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越少被反向译为the more（越多）。小区负载与可分配资源的关系被反转，应为the fewer。"
+  },
+  {
+    "source": "调度器优先调度高优先级业务，低优先级业务靠后。",
+    "target": "The scheduler gives priority to low-priority services, and high-priority services are served last.",
+    "error_type": "逻辑颠倒",
+    "error_info": "调度顺序被颠倒。原文为高优先级业务优先调度、低优先级靠后，译文完全相反。"
+  },
+  {
+    "source": "服务小区信号越弱，终端越倾向于重选至更好的邻区。",
+    "target": "The weaker the serving cell signal, the less likely the terminal is to reselect a better neighboring cell.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越倾向于被反向译为the less likely（越不可能）。信号强度与小区重选倾向的关系被反转，应为the more likely。"
+  },
+  {
+    "source": "终端通过跟踪区更新流程更新网络注册位置。",
+    "target": "The terminal updates its registered location in the network through the attach procedure.",
+    "error_type": "术语错误",
+    "error_info": "跟踪区更新（Tracking Area Update, TAU）被误译为attach procedure（附着流程）。二者是不同的流程，应为tracking area update。"
+  },
+  {
+    "source": "寻呼消息由核心网通过寻呼信道下发给终端。",
+    "target": "The paging message is delivered by the core network to the terminal through the broadcast channel.",
+    "error_type": "术语错误",
+    "error_info": "寻呼信道（paging channel）被误译为broadcast channel（广播信道）。二者是不同的逻辑信道，应为paging channel。"
+  },
+  {
+    "source": "NB-IoT终端采用PSM省电模式以延长电池寿命。",
+    "target": "NB-IoT terminals adopt the connected mode to extend battery life.",
+    "error_type": "术语错误",
+    "error_info": "PSM省电模式（Power Saving Mode）被误译为connected mode（连接态）。PSM是深度省电状态，连接态是高功耗状态，与延长电池寿命的目的相悖，应为PSM。"
+  },
+  {
+    "source": "VoLTE通话业务由IMS域提供。",
+    "target": "VoLTE call services are provided by the CS domain.",
+    "error_type": "术语错误",
+    "error_info": "IMS域（IP多媒体子系统）被误译为CS domain（电路域）。VoLTE基于IMS提供，与电路域语音是不同的技术体系，应为IMS domain。"
+  },
+  {
+    "source": "RSRP用于衡量参考信号的接收功率电平。",
+    "target": "The RSRP is used to measure the received quality of the reference signal.",
+    "error_type": "术语错误",
+    "error_info": "RSRP测量的是参考信号接收功率（received power），译文误译为接收质量（received quality，即RSRQ的概念）。RSRP与RSRQ是两个不同的测量量，应为received power。"
+  },
+  {
+    "source": "切换失败后终端将发起RRC连接重建流程。",
+    "target": "The terminal will initiate the redirection procedure after a handover failure.",
+    "error_type": "术语错误",
+    "error_info": "RRC连接重建（RRC connection re-establishment）被误译为redirection（重定向）。二者是不同的失败恢复机制，应为RRC connection re-establishment。"
+  },
+  {
+    "source": "5G核心网网元之间通过服务化接口交互。",
+    "target": "The 5G core network elements interact with each other through point-to-point interfaces.",
+    "error_type": "术语错误",
+    "error_info": "服务化接口（service-based interface, SBI）被误译为point-to-point interfaces（点对点接口）。5G核心网采用服务化架构，SBI是其标志性接口形态。"
+  },
+  {
+    "source": "该终端支持载波聚合功能。",
+    "target": "This terminal supports dual connectivity.",
+    "error_type": "术语错误",
+    "error_info": "载波聚合（Carrier Aggregation, CA）被误译为dual connectivity（双连接，DC）。CA是同一基站下多载波聚合，DC是同时连接两个基站，二者是不同技术，应为carrier aggregation。"
+  },
+  {
+    "source": "Wi-Fi设备通过CSMA/CA机制竞争接入信道。",
+    "target": "Wi-Fi devices contend for channel access through the CSMA/CD mechanism.",
+    "error_type": "术语错误",
+    "error_info": "CSMA/CA（载波侦听多路访问/碰撞避免）被误译为CSMA/CD（碰撞检测）。CSMA/CD用于有线以太网，无线局域网采用CSMA/CA。"
+  },
+  {
+    "source": "ZigBee等短距通信技术工作于ISM非授权频段。",
+    "target": "Short-range communication technologies such as ZigBee operate in licensed cellular bands.",
+    "error_type": "术语错误",
+    "error_info": "ISM非授权频段（unlicensed ISM bands）被误译为licensed cellular bands（授权蜂窝频段）。二者是频谱属性完全不同的频段，应为unlicensed ISM bands。"
+  },
+  {
+    "source": "该款Wi-Fi 6设备支持WPA3加密协议。",
+    "target": "This Wi-Fi 6 device supports the WEP encryption protocol.",
+    "error_type": "术语错误",
+    "error_info": "WPA3被误译为WEP。WEP是早已被淘汰的不安全加密协议，与WPA3是完全不同的协议，应为WPA3。"
+  },
+  {
+    "source": "O-RAN架构中，近实时无线智能控制器负责近实时控制。",
+    "target": "In the O-RAN architecture, the CU is responsible for near-real-time control.",
+    "error_type": "术语错误",
+    "error_info": "近实时无线智能控制器（Near-RT RIC）被误译为CU（集中单元）。O-RAN中近实时控制由RIC承担，CU负责高层协议处理，二者是不同的网元。"
+  },
+  {
+    "source": "gNB与5G核心网之间通过NG接口连接。",
+    "target": "The gNB is connected to the 5G core network through the Xn interface.",
+    "error_type": "术语错误",
+    "error_info": "NG接口被误译为Xn接口。NG是基站与核心网之间的接口，Xn是基站与基站之间的接口，二者连接对象不同，应为NG interface。"
+  },
+  {
+    "source": "上行功控采用闭环方式调整终端发射功率。",
+    "target": "Uplink power control adjusts the terminal transmit power in an open-loop manner.",
+    "error_type": "术语错误",
+    "error_info": "闭环功控（closed-loop power control）被误译为open-loop（开环）。闭环基于网络反馈调整，开环无反馈，二者是不同的功控机制，应为closed-loop。"
+  },
+  {
+    "source": "漫游用户由拜访网络的基站提供服务。",
+    "target": "Roaming users are served by the base stations of their home network.",
+    "error_type": "术语错误",
+    "error_info": "拜访网络（visited network）被误译为home network（归属网络）。漫游的定义即由拜访网络提供服务，归属网络仅负责签约管理，应为visited network。"
+  },
+  {
+    "source": "该终端最大支持4个下行载波聚合。",
+    "target": "The terminal supports aggregation of up to 16 downlink component carriers.",
+    "error_type": "数字错误",
+    "error_info": "原文数值4个被误译为16。下行载波聚合能力数值错误，应为4。"
+  },
+  {
+    "source": "该小区配置了64通道的AAU设备。",
+    "target": "This cell is configured with 32-channel AAU devices.",
+    "error_type": "数字错误",
+    "error_info": "原文数值64通道被误译为32-channel。AAU通道数规格错误，应为64-channel。"
+  },
+  {
+    "source": "基站时钟同步精度要求为±1.5 μs。",
+    "target": "The clock synchronization accuracy requirement for base stations is ±1.5 ms.",
+    "error_type": "数字错误",
+    "error_info": "原文单位微秒（μs）被误译为毫秒（ms）。时间单位错误，精度要求相差1000倍，应为±1.5 μs。"
+  },
+  {
+    "source": "本批到货光模块共800只。",
+    "target": "A total of 500 optical modules were delivered in this batch.",
+    "error_type": "数字错误",
+    "error_info": "原文数值800只被误译为500。到货数量错误，应为800。"
+  },
+  {
+    "source": "隧道泄漏电缆的总长度为2.4 km。",
+    "target": "The total length of the leaky cable in the tunnel is 4.2 km.",
+    "error_type": "数字错误",
+    "error_info": "原文数值2.4 km被误译为4.2 km。泄漏电缆总长度数值错误，应为2.4 km。"
+  },
+  {
+    "source": "本小区最大允许接入用户数为1200。",
+    "target": "The maximum number of allowed access users in this cell is 2100.",
+    "error_type": "数字错误",
+    "error_info": "原文数值1200被误译为2100。最大允许接入用户数错误，应为1200。"
+  },
+  {
+    "source": "铁塔天线平台距地面高度为35米。",
+    "target": "The antenna platform of the tower is 53 meters above the ground.",
+    "error_type": "数字错误",
+    "error_info": "原文数值35米被误译为53 meters。塔上平台高度数值错误，应为35 meters。"
+  },
+  {
+    "source": "市电中断后，站点由蓄电池供电约可维持4小时。",
+    "target": "After the mains power fails, the site can be powered by batteries for about 10 hours.",
+    "error_type": "数字错误",
+    "error_info": "原文数值4小时被误译为10 hours。蓄电池后备供电时长错误，应为4 hours。"
+  },
+  {
+    "source": "无线接通率考核指标为99.9%。",
+    "target": "The assessment indicator for the wireless call setup success rate is 99.0%.",
+    "error_type": "数字错误",
+    "error_info": "原文数值99.9%被误译为99.0%。接通率考核指标数值错误，应为99.9%。"
+  },
+  {
+    "source": "本年度无线网络总投资为1.2亿元。",
+    "target": "The total investment in the wireless network this year is 210 million yuan.",
+    "error_type": "数字错误",
+    "error_info": "原文数值1.2亿元被误译为210 million yuan（2.1亿元）。投资金额数值错误，应为120 million yuan。"
+  },
+  {
+    "source": "基站设备巡检周期为每周一次。",
+    "target": "The inspection cycle of base station equipment is once a month.",
+    "error_type": "数字错误",
+    "error_info": "原文频次每周一次被误译为once a month（每月一次）。巡检周期错误，应为once a week。"
+  },
+  {
+    "source": "备件库存应满足不少于3天的更换需求。",
+    "target": "Spare parts inventory shall cover the replacement demand for no less than 10 days.",
+    "error_type": "数字错误",
+    "error_info": "原文数值3天被误译为10 days。备件保障天数错误，应为3 days。"
+  },
+  {
+    "source": "该基站机架提供16个单板槽位。",
+    "target": "The rack of this base station provides 19 board slots.",
+    "error_type": "数字错误",
+    "error_info": "原文数值16个槽位被误译为19。单板槽位数量错误，应为16。"
+  },
+  {
+    "source": "到货设备的抽检比例不低于总量的10%。",
+    "target": "The sampling inspection ratio of delivered equipment shall be no less than 20% of the total.",
+    "error_type": "数字错误",
+    "error_info": "原文数值10%被误译为20%。抽检比例数值错误，应为10%。"
+  },
+  {
+    "source": "该基站的天线挂高为45米。",
+    "target": "The antenna height of this base station is 54 meters.",
+    "error_type": "数字错误",
+    "error_info": "原文数值45米被误译为54 meters。天线挂高数值错误，应为45 meters。"
+  }
+]

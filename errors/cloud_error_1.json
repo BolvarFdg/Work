@@ -1,0 +1,602 @@
+[
+  {
+    "source": "运维人员应定期清理虚拟机中的临时文件。",
+    "target": "O&M personnel should regularly back up the temporary files in virtual machines.",
+    "error_type": "错译",
+    "error_info": "清理被误译为back up（备份）。清理是删除无用文件，与备份是完全不同的操作，应为clean up。"
+  },
+  {
+    "source": "云平台支持云硬盘在线扩容。",
+    "target": "The cloud platform supports online deletion of cloud disks.",
+    "error_type": "错译",
+    "error_info": "扩容被误译为deletion（删除）。扩容是增加磁盘容量，与删除是不同的操作，应为online expansion。"
+  },
+  {
+    "source": "管理员可通过控制台查看资源使用趋势。",
+    "target": "Administrators can modify the resource usage trends through the console.",
+    "error_type": "错译",
+    "error_info": "查看被误译为modify（修改）。资源使用趋势是监控数据，只能查看不能修改，应为view。"
+  },
+  {
+    "source": "实施变更前请仔细阅读操作指导。",
+    "target": "Please carefully compile the operation guide before implementing the change.",
+    "error_type": "错译",
+    "error_info": "阅读被误译为compile（编写）。操作指导是阅读对象而非编写对象，应为read。"
+  },
+  {
+    "source": "租户可随时导出账单明细。",
+    "target": "Tenants can delete the billing details at any time.",
+    "error_type": "错译",
+    "error_info": "导出被误译为delete（删除）。导出与删除是不同操作，删除账单明细将导致数据丢失，应为export。"
+  },
+  {
+    "source": "平台每月发布一次服务公告。",
+    "target": "The platform receives service announcements once a month.",
+    "error_type": "错译",
+    "error_info": "发布被误译为receives（接收）。平台是服务公告的发布方而非接收方，应为releases。"
+  },
+  {
+    "source": "部署应用前需申请弹性公网IP。",
+    "target": "You need to return an elastic public IP address before deploying the application.",
+    "error_type": "错译",
+    "error_info": "申请被误译为return（退还）。部署前应申请资源而非退还资源，应为apply for。"
+  },
+  {
+    "source": "主备倒换后，原主用节点自动转为备用角色。",
+    "target": "After the active/standby switchover, the original active node is automatically removed from the cluster.",
+    "error_type": "错译",
+    "error_info": "转为备用角色被误译为removed from the cluster（移出集群）。原主用节点应转为备用继续在集群中运行，而非被移除，应为switch to the standby role。"
+  },
+  {
+    "source": "云服务商承诺故障工单2小时内响应。",
+    "target": "The cloud service provider promises to close fault tickets within 2 hours.",
+    "error_type": "错译",
+    "error_info": "响应被误译为close（关闭）。响应指开始受理工单，关闭指处理完成，二者是不同的SLA承诺，应为respond to。"
+  },
+  {
+    "source": "巡检报告经审核后需归档保存。",
+    "target": "Inspection reports shall be destroyed after being reviewed.",
+    "error_type": "错译",
+    "error_info": "归档被误译为destroyed（销毁）。归档是留存记录以备审计，与销毁的处理方式相反，应为archived。"
+  },
+  {
+    "source": "配额调整申请需说明变更原因。",
+    "target": "Quota adjustment applications shall state the applicant's position.",
+    "error_type": "错译",
+    "error_info": "变更原因被误译为applicant's position（申请人职位）。申请中需说明的是调整原因，而非申请人职位，应为the reason for the change。"
+  },
+  {
+    "source": "监控数据默认保留90天，到期后自动删除。",
+    "target": "Monitoring data is retained for 90 days by default and is automatically downloaded after expiration.",
+    "error_type": "错译",
+    "error_info": "自动删除被误译为automatically downloaded（自动下载）。到期数据的处理方式完全错误，应为automatically deleted。"
+  },
+  {
+    "source": "维护窗口结束后，运维团队将汇总变更记录。",
+    "target": "After the maintenance window, the O&M team will discard the change records.",
+    "error_type": "错译",
+    "error_info": "汇总被误译为discard（丢弃）。变更记录是重要审计材料，应汇总整理而非丢弃，应为consolidate。"
+  },
+  {
+    "source": "实施方案需明确回退触发条件。",
+    "target": "The implementation plan shall specify the rollback execution time.",
+    "error_type": "错译",
+    "error_info": "回退触发条件被误译为rollback execution time（回退执行时间）。方案需明确的是何种情况下触发回退，而非回退的执行时间，应为rollback trigger conditions。"
+  },
+  {
+    "source": "账户欠费后，云资源将被冻结而非直接删除。",
+    "target": "After the account is in arrears, cloud resources will be migrated instead of being deleted.",
+    "error_type": "错译",
+    "error_info": "冻结被误译为migrated（迁移）。欠费后的处理方式是冻结资源使其暂停服务，而非迁移，应为frozen。"
+  },
+  {
+    "source": "仅租户管理员有权修改配额设置。",
+    "target": "The tenant administrator has the right to modify quota settings.",
+    "error_type": "漏译",
+    "error_info": "遗漏限定词仅（only）。权限排他性丢失，造成其他角色也可修改的误解，应为Only the tenant administrator has the right to modify quota settings。"
+  },
+  {
+    "source": "未绑定弹性公网IP的云主机无法访问公网。",
+    "target": "Cloud hosts cannot access the public network.",
+    "error_type": "漏译",
+    "error_info": "遗漏限定语未绑定弹性公网IP的（without an elastic public IP bound）。限制范围丢失，变成所有云主机均无法访问公网，应补译该限定。"
+  },
+  {
+    "source": "变更实施完成后，需观察系统运行24小时方可关闭变更单。",
+    "target": "The change ticket can be closed after the change is implemented.",
+    "error_type": "漏译",
+    "error_info": "遗漏需观察系统运行24小时（observing the system for 24 hours）。关闭变更单的前置观察期要求丢失，应为only after the system is observed for 24 hours。"
+  },
+  {
+    "source": "快照恢复将覆盖云硬盘当前数据，操作前请务必确认。",
+    "target": "Snapshot restoration will overwrite the current data on the cloud disk.",
+    "error_type": "漏译",
+    "error_info": "遗漏操作前请务必确认（please confirm before the operation）。数据覆盖风险的操作确认警告丢失，应补译该警告。"
+  },
+  {
+    "source": "缩容前必须确认节点上已无关键业务。",
+    "target": "Before scaling in, you must confirm the nodes.",
+    "error_type": "漏译",
+    "error_info": "遗漏上已无关键业务（that no critical services are running on the nodes）。确认的具体内容丢失，缩容安全性要求不完整，应补译该内容。"
+  },
+  {
+    "source": "平台升级期间，新建资源请求将被延迟处理。",
+    "target": "Requests for creating new resources will be delayed.",
+    "error_type": "漏译",
+    "error_info": "遗漏时间状语平台升级期间（during the platform upgrade）。延迟处理的场景丢失，变成无条件延迟，应补译该状语。"
+  },
+  {
+    "source": "告警屏蔽期间，新产生的告警仍会记录但不通知。",
+    "target": "During alarm masking, newly generated alarms will still be recorded.",
+    "error_type": "漏译",
+    "error_info": "遗漏但不通知（but will not be notified）。屏蔽期间告警不通知的关键行为丢失，可能误导为仍会通知，应补译but will not be notified。"
+  },
+  {
+    "source": "同一反亲和组内的虚拟机不会被调度到同一台物理机。",
+    "target": "Virtual machines in the same anti-affinity group will be scheduled to the same physical server.",
+    "error_type": "漏译",
+    "error_info": "遗漏否定词不。反亲和组的作用就是避免调度到同一物理机，译文语义完全相反，应为will NOT be scheduled to the same physical server。"
+  },
+  {
+    "source": "密钥对一旦丢失无法找回，请妥善保管。",
+    "target": "Please keep the key pair safe.",
+    "error_type": "漏译",
+    "error_info": "遗漏一旦丢失无法找回（cannot be recovered once lost）。密钥丢失不可恢复的严重后果警告完全丢失，应补译the key pair cannot be recovered once lost。"
+  },
+  {
+    "source": "弹性伸缩组在冷却时间内不会触发新的伸缩活动。",
+    "target": "The auto scaling group will not trigger any new scaling activities.",
+    "error_type": "漏译",
+    "error_info": "遗漏时间限定在冷却时间内（during the cooldown period）。不触发伸缩的限制范围丢失，变成永不伸缩，应补译during the cooldown period。"
+  },
+  {
+    "source": "包年包月实例到期后将自动停机，不会立即释放。",
+    "target": "Yearly/monthly instances will automatically shut down after expiration.",
+    "error_type": "漏译",
+    "error_info": "遗漏不会立即释放（and will not be released immediately）。停机与释放的重要区别丢失，可能误导用户以为到期即释放资源，应补译该说明。"
+  },
+  {
+    "source": "本服务仅企业主账号可用，子账号无权限。",
+    "target": "This service is available only to enterprise primary accounts.",
+    "error_type": "漏译",
+    "error_info": "遗漏子账号无权限（sub-accounts have no permission）。服务可用范围的补充说明丢失，应补译该内容。"
+  },
+  {
+    "source": "健康检查失败次数达到阈值后，后端服务器将被移出转发列表。",
+    "target": "Backend servers will be removed from the forwarding list when health checks fail.",
+    "error_type": "漏译",
+    "error_info": "遗漏失败次数达到阈值后（after the failure count reaches the threshold）。移出条件由累计失败达到阈值弱化为一次失败即移出，应补译该条件。"
+  },
+  {
+    "source": "高危变更实施前必须完成备份并验证可回退。",
+    "target": "Backups must be completed before high-risk changes are implemented.",
+    "error_type": "漏译",
+    "error_info": "遗漏并验证可回退（and rollback capability must be verified）。回退验证要求丢失，变更安全保障措施不完整，应补译该内容。"
+  },
+  {
+    "source": "授予子账号权限时应遵循最小权限原则，禁止直接授予管理员权限。",
+    "target": "The least privilege principle shall be followed when granting permissions to sub-accounts.",
+    "error_type": "漏译",
+    "error_info": "遗漏禁止直接授予管理员权限（do not grant administrator permissions directly）。权限管理的关键禁令丢失，应补译该禁令。"
+  },
+  {
+    "source": "该公共镜像支持主流Linux发行版。",
+    "target": "This public image supports mainstream Linux distributions such as CentOS and Ubuntu.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的具体发行版列举（CentOS和Ubuntu）。镜像支持范围被凭空具体化，应删除such as CentOS and Ubuntu。"
+  },
+  {
+    "source": "该规格云主机支持按秒计费。",
+    "target": "Cloud hosts of this type are billed per second with a minimum charge of one hour.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的最低消费一小时（minimum charge of one hour）。计费规则被凭空增加，应删除该内容。"
+  },
+  {
+    "source": "本云平台已通过等保三级测评。",
+    "target": "The cloud platform has passed the Multi-Level Protection Scheme (MLPS) Level 3 assessment and ISO 27001 certification.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的ISO 27001认证。平台资质被凭空扩大，应删除and ISO 27001 certification。"
+  },
+  {
+    "source": "该可用区支持计算优化型实例。",
+    "target": "This availability zone supports compute-optimized instances with up to 128 vCPUs.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的规格上限128 vCPU。实例能力被凭空具体化，应删除with up to 128 vCPUs。"
+  },
+  {
+    "source": "平台提供Web控制台管理云资源。",
+    "target": "The platform provides a web console and a mobile app for cloud resource management.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的移动应用管理渠道（a mobile app）。资源管理渠道被凭空增加，应删除and a mobile app。"
+  },
+  {
+    "source": "本服务支持公网和内网两种接入方式。",
+    "target": "This service supports access via public network, internal network, and dedicated lines.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的专线接入方式（dedicated lines）。接入方式被凭空增加，应删除and dedicated lines。"
+  },
+  {
+    "source": "数据库实例支持手动重启。",
+    "target": "Database instances support manual restart and automatic failover.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的自动故障切换能力（automatic failover）。实例功能被凭空增加，应删除and automatic failover。"
+  },
+  {
+    "source": "镜像支持加密存储。",
+    "target": "Images support encrypted storage and cross-region replication.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的跨区域复制功能（cross-region replication）。镜像能力被凭空增加，应删除and cross-region replication。"
+  },
+  {
+    "source": "升级包下载支持断点续传。",
+    "target": "The upgrade package download supports resumable transfer and automatic retry upon failure.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的失败自动重试功能。下载特性被凭空增加，应删除and automatic retry upon failure。"
+  },
+  {
+    "source": "该告警规则支持短信通知。",
+    "target": "This alarm rule supports notifications via SMS, email, and webhooks.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的邮件和Webhook通知渠道。通知方式被凭空增加，应删除email, and webhooks。"
+  },
+  {
+    "source": "对象存储支持静态网站托管。",
+    "target": "Object storage supports static website hosting with a free custom domain.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的免费自定义域名服务（a free custom domain）。托管功能描述被凭空增加，应删除with a free custom domain。"
+  },
+  {
+    "source": "平台支持将日志导出到本地。",
+    "target": "The platform supports exporting logs to local storage and third-party log platforms.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的导出至第三方日志平台功能。日志导出能力被凭空扩大，应删除and third-party log platforms。"
+  },
+  {
+    "source": "本次迁移仅涉及数据库层。",
+    "target": "This migration involves only the database layer and the application layer cache.",
+    "error_type": "过译",
+    "error_info": "凭空添加了原文不存在的应用层缓存（the application layer cache）。迁移范围被凭空扩大，应删除and the application layer cache。"
+  },
+  {
+    "source": "双活数据中心工程计划于下季度完工。",
+    "target": "The active-active data center project has been completed.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为计划下季度完工，译文歪曲为已经完工。工程状态由计划中被虚构为已完成。"
+  },
+  {
+    "source": "平台服务可用性设计目标为99.95%。",
+    "target": "The platform has achieved an actual service availability of 99.95%.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为设计目标（design target），译文歪曲为已实际达成（has achieved）。目标值与实际达成值是完全不同的承诺。"
+  },
+  {
+    "source": "新控制台预计将提升资源操作效率。",
+    "target": "The new console has significantly improved the efficiency of resource operations.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为预计提升（is expected to improve），译文歪曲为已经显著提升（has significantly improved）。预期效果被虚构为既成事实。"
+  },
+  {
+    "source": "据部分用户反馈，新界面操作更为便捷。",
+    "target": "The new interface is confirmed to be more convenient for all users.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为部分用户反馈（partial user feedback），译文歪曲为全体用户确认（confirmed for all users）。反馈范围与结论强度均被改变。"
+  },
+  {
+    "source": "该故障正在定位中，初步怀疑与存储驱动相关。",
+    "target": "The fault has been confirmed to be caused by the storage driver.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为正在定位、初步怀疑，译文歪曲为已确认由存储驱动导致。故障分析进度被虚构为已完成并定论。"
+  },
+  {
+    "source": "本次资费调整仅影响新购用户。",
+    "target": "This price adjustment affects both new and existing customers.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为仅影响新购用户，译文歪曲为新老客户均受影响。资费调整的影响范围被扩大。"
+  },
+  {
+    "source": "云硬盘三副本机制可显著降低数据丢失风险。",
+    "target": "The three-replica mechanism of cloud disks completely eliminates the risk of data loss.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为显著降低（significantly reduces），译文歪曲为完全消除（completely eliminates）。技术效果被绝对化夸大。"
+  },
+  {
+    "source": "单地域部署成本较低，但容灾能力有限。",
+    "target": "Single-region deployment provides full disaster recovery capability at a low cost.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为容灾能力有限（limited DR capability），译文歪曲为具备完全容灾能力（full DR capability）。架构局限被说成优势。"
+  },
+  {
+    "source": "调度系统会尽量将关联任务调度到同一节点。",
+    "target": "The scheduler always assigns related tasks to the same node.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为尽量（tries to），译文歪曲为总是（always）。尽力而为的调度策略被歪曲为保证性行为。"
+  },
+  {
+    "source": "升级失败后，系统将尝试自动回退。",
+    "target": "The system will automatically roll back successfully upon any upgrade failure.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为尝试回退（attempts to roll back），译文歪曲为任何失败场景下都能成功回退（roll back successfully upon any failure）。回退的尝试性被歪曲为保证成功。"
+  },
+  {
+    "source": "该运维工具适合有经验的运维人员使用。",
+    "target": "The O&M tool is suitable for all users without any training.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为适合有经验的运维人员，译文歪曲为所有用户无需培训即可使用。工具的使用门槛被完全消除。"
+  },
+  {
+    "source": "服务降级期间，核心功能仍可正常使用。",
+    "target": "During service degradation, no functions are affected.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为仅核心功能可正常使用（暗含非核心功能受影响），译文歪曲为所有功能均不受影响。降级的影响范围被掩盖。"
+  },
+  {
+    "source": "生产环境建议使用多副本部署。",
+    "target": "Multi-replica deployment is optional and rarely used in production.",
+    "error_type": "语义歪曲",
+    "error_info": "原文为生产环境建议使用（recommended），译文歪曲为可选且很少使用（optional and rarely used）。部署建议被弱化为可有可无。"
+  },
+  {
+    "source": "物理资源越充足，可承载的虚拟机数量越多。",
+    "target": "The more abundant the physical resources, the fewer virtual machines can be hosted.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越多被反向译为the fewer（越少）。物理资源与可承载虚拟机数量的正相关关系被反转。"
+  },
+  {
+    "source": "节点负载越低，越容易触发自动缩容。",
+    "target": "The lower the node load, the less likely auto scale-in is to be triggered.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越容易触发被反向译为the less likely（越不可能触发）。负载与缩容触发的关系被反转。"
+  },
+  {
+    "source": "副本数量越多，数据的持久可靠性越高。",
+    "target": "The more replicas there are, the lower the data durability.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越高被反向译为the lower（越低）。副本数与数据持久性的正相关关系被反转。"
+  },
+  {
+    "source": "必须先卸载云硬盘，再执行删除操作。",
+    "target": "The cloud disk must be deleted before it is unmounted.",
+    "error_type": "逻辑颠倒",
+    "error_info": "操作顺序被颠倒。原文为先卸载、后删除，译文变为先删除、后卸载。"
+  },
+  {
+    "source": "集群升级时须先升级管理节点，再升级计算节点。",
+    "target": "When upgrading the cluster, compute nodes must be upgraded first, followed by management nodes.",
+    "error_type": "逻辑颠倒",
+    "error_info": "升级顺序被颠倒。原文为先升级管理节点、后升级计算节点，译文相反。"
+  },
+  {
+    "source": "缩容时应优先移出负载最低的实例。",
+    "target": "During scale-in, the instances with the highest load should be removed first.",
+    "error_type": "逻辑颠倒",
+    "error_info": "负载最低被反向译为the highest load（负载最高）。移出实例的选择标准完全相反。"
+  },
+  {
+    "source": "冷数据应迁移至低频访问存储层，热数据保留在高性能存储层。",
+    "target": "Cold data should be migrated to the high-performance storage tier, while hot data stays in the infrequent access tier.",
+    "error_type": "逻辑颠倒",
+    "error_info": "冷数据与热数据的存储层级被完全对调。冷数据应对应低频访问层、热数据应对应高性能层。"
+  },
+  {
+    "source": "全量备份每周日执行，增量备份每天执行。",
+    "target": "Full backups are performed daily, and incremental backups are performed on Sundays.",
+    "error_type": "逻辑颠倒",
+    "error_info": "全量备份与增量备份的执行频率被完全对调。原文为全量每周日、增量每天，译文相反。"
+  },
+  {
+    "source": "主节点故障时，由备用节点接管业务。",
+    "target": "When the standby node fails, the primary node takes over the services.",
+    "error_type": "逻辑颠倒",
+    "error_info": "故障角色与接管角色被对调。原文为主节点故障、备用节点接管，译文相反。"
+  },
+  {
+    "source": "请求量超过阈值时触发弹性扩容。",
+    "target": "Elastic scale-out is triggered when the request volume falls below the threshold.",
+    "error_type": "逻辑颠倒",
+    "error_info": "超过被反向译为falls below（低于）。弹性扩容的触发条件被反转。"
+  },
+  {
+    "source": "缓存命中率越高，后端数据库的压力越小。",
+    "target": "The higher the cache hit ratio, the greater the pressure on the backend database.",
+    "error_type": "逻辑颠倒",
+    "error_info": "越小被反向译为the greater（越大）。缓存命中率与后端数据库压力的负相关关系被反转。"
+  },
+  {
+    "source": "读写分离架构中，写请求路由至主库，读请求路由至备库。",
+    "target": "In the read-write splitting architecture, write requests are routed to the standby database, and read requests are routed to the primary database.",
+    "error_type": "逻辑颠倒",
+    "error_info": "读写请求的路由目标被对调。写请求应对应主库、读请求应对应备库。"
+  },
+  {
+    "source": "镜像导入后即可直接创建云主机，无需重新安装操作系统。",
+    "target": "After an image is imported, the operating system must be reinstalled before creating a cloud host.",
+    "error_type": "逻辑颠倒",
+    "error_info": "无需重新安装被反向译为必须重装。镜像的核心价值即免装系统部署，译文完全相反。"
+  },
+  {
+    "source": "同一VPC内两台云主机之间的数据传输不消耗公网流量。",
+    "target": "Data transfer between two cloud hosts in the same VPC consumes public network traffic.",
+    "error_type": "逻辑颠倒",
+    "error_info": "不消耗公网流量被反向译为消耗公网流量（consumes public network traffic）。内网传输的流量属性被反转。"
+  },
+  {
+    "source": "平台采用Kubernetes编排容器化网元。",
+    "target": "The platform uses Docker Swarm to orchestrate containerized network functions.",
+    "error_type": "术语错误",
+    "error_info": "Kubernetes被误译为Docker Swarm。二者是不同的容器编排系统，应为Kubernetes。"
+  },
+  {
+    "source": "5GC网元以云原生方式部署为微服务。",
+    "target": "5GC network functions are deployed as virtual machines in a cloud-native manner.",
+    "error_type": "术语错误",
+    "error_info": "微服务（microservices）被误译为virtual machines（虚拟机）。云原生部署形态是微服务/容器，虚拟机是虚拟化部署形态，二者是不同的技术路线，应为microservices。"
+  },
+  {
+    "source": "VNF Manager负责VNF的生命周期管理。",
+    "target": "The VIM is responsible for the lifecycle management of VNFs.",
+    "error_type": "术语错误",
+    "error_info": "VNF Manager（VNFM）被误译为VIM。VNFM负责VNF生命周期管理，VIM负责虚拟化基础设施管理，二者是NFV MANO架构中职责不同的组件。"
+  },
+  {
+    "source": "Ceph集群通过CRUSH算法完成数据分布。",
+    "target": "The Ceph cluster distributes data through the round-robin algorithm.",
+    "error_type": "术语错误",
+    "error_info": "CRUSH算法被误译为round-robin（轮询）算法。CRUSH是Ceph专有的数据分布算法，应为CRUSH algorithm。"
+  },
+  {
+    "source": "对象存储采用纠删码技术降低存储开销。",
+    "target": "Object storage adopts three-way replication to reduce storage overhead.",
+    "error_type": "术语错误",
+    "error_info": "纠删码（erasure coding）被误译为three-way replication（三副本）。二者是不同的数据冗余技术，纠删码才是降低存储开销的手段，应为erasure coding。"
+  },
+  {
+    "source": "容器通过Namespace机制实现运行环境隔离。",
+    "target": "Containers achieve runtime environment isolation through the hypervisor mechanism.",
+    "error_type": "术语错误",
+    "error_info": "Namespace（命名空间）被误译为hypervisor（虚拟机管理程序）。容器隔离依赖内核的Namespace机制，hypervisor是虚拟机技术，二者是不同技术层面的隔离机制，应为Namespace。"
+  },
+  {
+    "source": "虚拟机通过热迁移实现不停机维护。",
+    "target": "Virtual machines achieve non-disruptive maintenance through cold migration.",
+    "error_type": "术语错误",
+    "error_info": "热迁移（live migration）被误译为cold migration（冷迁移）。冷迁移需要停机，与不停机维护的语义直接矛盾，应为live migration。"
+  },
+  {
+    "source": "服务网格通过Sidecar代理拦截服务间流量。",
+    "target": "The service mesh intercepts inter-service traffic through the DNS proxy.",
+    "error_type": "术语错误",
+    "error_info": "Sidecar代理被误译为DNS proxy（DNS代理）。Sidecar是服务网格的边车代理，是拦截服务间流量的核心组件，应为Sidecar proxy。"
+  },
+  {
+    "source": "该实例规格基于通用x86架构。",
+    "target": "This instance type is based on the general-purpose ARM architecture.",
+    "error_type": "术语错误",
+    "error_info": "x86架构被误译为ARM架构。x86与ARM是不同的处理器架构，应为x86。"
+  },
+  {
+    "source": "两个VPC之间通过对等连接实现内网互通。",
+    "target": "The two VPCs communicate internally through the public IP gateway.",
+    "error_type": "术语错误",
+    "error_info": "对等连接（VPC peering）被误译为public IP gateway（公网网关）。对等连接是VPC之间内网互通的专用技术，应为VPC peering。"
+  },
+  {
+    "source": "StatefulSet用于部署有状态应用。",
+    "target": "The StatefulSet is used to deploy stateless applications.",
+    "error_type": "术语错误",
+    "error_info": "有状态应用被误译为stateless applications（无状态应用）。StatefulSet的定义即用于部署有状态应用，无状态应用应使用Deployment，应为stateful applications。"
+  },
+  {
+    "source": "分布式存储通过Paxos协议保证多副本一致性。",
+    "target": "Distributed storage ensures multi-replica consistency through the HTTP protocol.",
+    "error_type": "术语错误",
+    "error_info": "Paxos协议被误译为HTTP协议。Paxos是分布式一致性协议，HTTP是应用层传输协议，二者完全不同，应为Paxos。"
+  },
+  {
+    "source": "NFVI为VNF提供虚拟化的计算、存储和网络资源。",
+    "target": "The VNF provides virtualized computing, storage, and network resources for the NFVI.",
+    "error_type": "术语错误",
+    "error_info": "NFVI与VNF的角色被对调。NFVI（NFV基础设施）是资源提供方，VNF（虚拟网络功能）是资源使用方，译文主客颠倒。"
+  },
+  {
+    "source": "容器镜像默认从私有镜像仓库拉取。",
+    "target": "Container images are pulled from the public Docker Hub by default.",
+    "error_type": "术语错误",
+    "error_info": "私有镜像仓库（private image registry）被误译为public Docker Hub（公共Docker Hub）。镜像拉取来源的仓库属性完全错误，应为private image registry。"
+  },
+  {
+    "source": "分布式消息队列采用发布/订阅模型。",
+    "target": "The distributed message queue adopts the point-to-point queuing model.",
+    "error_type": "术语错误",
+    "error_info": "发布/订阅模型（publish/subscribe）被误译为point-to-point queuing model（点对点队列模型）。二者是消息中间件的两种不同通信模型，应为publish/subscribe model。"
+  },
+  {
+    "source": "云主机默认系统盘容量为40 GB。",
+    "target": "The default system disk capacity of the cloud host is 400 GB.",
+    "error_type": "数字错误",
+    "error_info": "原文数值40 GB被误译为400 GB。系统盘默认容量错误，应为40 GB。"
+  },
+  {
+    "source": "存储集群默认副本数为3。",
+    "target": "The default number of replicas in the storage cluster is 2.",
+    "error_type": "数字错误",
+    "error_info": "原文数值3被误译为2。存储集群默认副本数错误，应为3。"
+  },
+  {
+    "source": "单个VPC最多支持创建200个子网。",
+    "target": "A single VPC supports creating up to 20 subnets.",
+    "error_type": "数字错误",
+    "error_info": "原文数值200个被误译为20。子网数量上限错误，应为200。"
+  },
+  {
+    "source": "负载均衡健康检查间隔为5秒。",
+    "target": "The health check interval of the load balancer is 15 seconds.",
+    "error_type": "数字错误",
+    "error_info": "原文数值5秒被误译为15 seconds。健康检查间隔数值错误，应为5 seconds。"
+  },
+  {
+    "source": "本服务可用性承诺为99.99%。",
+    "target": "The availability commitment of this service is 99.9%.",
+    "error_type": "数字错误",
+    "error_info": "原文数值99.99%被误译为99.9%。可用性承诺等级错误（相差一个数量级的不可用时长），应为99.99%。"
+  },
+  {
+    "source": "该弹性公网IP的带宽上限为100 Mbit/s。",
+    "target": "The maximum bandwidth of this elastic public IP is 1000 Mbit/s.",
+    "error_type": "数字错误",
+    "error_info": "原文数值100 Mbit/s被误译为1000 Mbit/s。带宽上限数值错误，应为100 Mbit/s。"
+  },
+  {
+    "source": "快照保留策略为最近7天。",
+    "target": "The snapshot retention policy keeps the last 70 days.",
+    "error_type": "数字错误",
+    "error_info": "原文数值7天被误译为70 days。快照保留天数错误，应为7 days。"
+  },
+  {
+    "source": "本集群包含12个计算节点。",
+    "target": "This cluster consists of 21 compute nodes.",
+    "error_type": "数字错误",
+    "error_info": "原文数值12个被误译为21。计算节点数量错误，应为12。"
+  },
+  {
+    "source": "数据库最大连接数上限为500。",
+    "target": "The maximum number of database connections is 300.",
+    "error_type": "数字错误",
+    "error_info": "原文数值500被误译为300。数据库最大连接数错误，应为500。"
+  },
+  {
+    "source": "该云硬盘的IOPS性能上限为20000。",
+    "target": "The maximum IOPS of this cloud disk is 2,000,000.",
+    "error_type": "数字错误",
+    "error_info": "原文数值20000被误译为2,000,000。云硬盘IOPS性能上限错误，应为20,000。"
+  },
+  {
+    "source": "触发该告警的CPU使用率阈值设定为80%。",
+    "target": "The CPU usage threshold for triggering this alarm is set to 60%.",
+    "error_type": "数字错误",
+    "error_info": "原文数值80%被误译为60%。告警触发阈值数值错误，应为80%。"
+  },
+  {
+    "source": "本次集群升级预计耗时2小时。",
+    "target": "This cluster upgrade is expected to take 12 hours.",
+    "error_type": "数字错误",
+    "error_info": "原文数值2小时被误译为12 hours。升级耗时预估错误，应为2 hours。"
+  },
+  {
+    "source": "该接口的限流值为每秒1000次请求。",
+    "target": "The rate limit of this API is 100 requests per second.",
+    "error_type": "数字错误",
+    "error_info": "原文数值每秒1000次被误译为100。接口限流值错误，应为1,000 requests per second。"
+  },
+  {
+    "source": "单租户默认云主机配额为50台。",
+    "target": "The default cloud host quota for a single tenant is 15.",
+    "error_type": "数字错误",
+    "error_info": "原文数值50台被误译为15。租户默认云主机配额错误，应为50。"
+  },
+  {
+    "source": "该云硬盘的吞吐量为150 MB/s。",
+    "target": "The throughput of this cloud disk is 15 MB/s.",
+    "error_type": "数字错误",
+    "error_info": "原文数值150 MB/s被误译为15 MB/s。云硬盘吞吐量数值错误，应为150 MB/s。"
+  }
+]
