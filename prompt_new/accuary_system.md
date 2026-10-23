@@ -53,7 +53,7 @@
    错误点片段的译法与某条语料一致 → 该片段不报；多译法并存时命中任一即判对。
 2. 未命中：译文与所有语料都不一致 → 该译文大概率有错——将译文与最接近的语料逐项比对，找出差异：
    差异仅为措辞/句式/词序（意思相同，如 adjustable vs can be adjusted）→ 不报。
-   差异涉及动词（Illustrates≠Describe）、逻辑关系（further≠alternatively）、范围（DL≠UL and DL）、术语（Tag≠label）→ 报错。
+   差异涉及动词（Illustrates≠Describe）、逻辑关系（further≠alternatively）、范围（DL≠UL and DL）、术语（Tag≠label）、数字/单位格式（3900≠3,900、MHz≠mHz）→ 报错。
 3. 数值边界：译文与语料一致时数值跟随语料判对；仅当与原文有换算与格式都无法解释的明显偏差才报。
 4. 无语料 → 按原文独立判定。
 
