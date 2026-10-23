@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 """现网请求回放测试脚本：从 Excel「请求」列读取 Python 格式的请求串，并发回放到质检接口。
 
 数据格式：Excel 指定列（默认列名「请求」）每行一个字符串，是现网爬取的 Python dict
@@ -27,7 +27,7 @@ repr（单引号、True/False/None），脚本用 ast.literal_eval 解析，并�
     明细：<output>，JSONL，每行固定 5 个字段：round/row/status/error_type/resp。
           error_type 为 Excel「问题类型」列的值（每条都记录，列缺失时为 null）。
           resp 为模型返回的压缩结果：
-          - final_has_errors=true：{"final_has_errors": true, "summary_content": "<原始JSON串>"}
+          - final_has_errors=true：{"final_has_errors": true, "summary_content": {…解析后的JSON对象…}}
           - final_has_errors=false：{"final_has_errors": false}
           - final_has_errors 为 null 时（summary 为空/非 JSON/缺键）：resp 整体替换为
             接口返回的原始 JSON，原封不动，便于定位失败原因
@@ -101,16 +101,20 @@ def get_session() -> requests.Session:
 # ---------------------------------------------------------------- 数据读取
 
 def load_requests(excel_path: str, column: str, type_column: str, sheet: Any,
-                  limit: int) -> Tuple[List[Tuple[int, dict, Any]], List[dict]]:
-    """读取 Excel 指定列，返回 ([(Excel行号, 请求dict, 问题类型), ...], 解析失败列表)。
+                  limit: int,
+                  filter_column: Optional[str] = None,
+                  filter_value: Optional[str] = None,
+                  rows: Optional[str] = None) -> Tuple[List[Tuple[int, dict, Any]], List[dict], int]:
+    """读取 Excel 指定列，返回 ([(Excel行号, 请求dict, 问题类型), ...], 解析失败列表, 被过滤条数)。
 
     解析成功的请求强制 return_details=True；问题类型列不存在时类型值记 None。
+    过滤：filter_column + filter_value 匹配时保留；rows 指定 Excel 行号集合（逗号分隔）优先。
     """
     wb = load_workbook(excel_path, read_only=True, data_only=True)
     try:
         ws = wb[sheet] if isinstance(sheet, str) else wb.worksheets[sheet]
-        rows = ws.iter_rows(values_only=True)
-        headers = list(next(rows, []))
+        rows_iter = ws.iter_rows(values_only=True)
+        headers = list(next(rows_iter, []))
         try:
             col = headers.index(column)
         except ValueError:
@@ -119,9 +123,40 @@ def load_requests(excel_path: str, column: str, type_column: str, sheet: Any,
         if type_col is None:
             print(f"⚠ 未找到问题类型列「{type_column}」，error_type 将记为 null")
 
+        filter_col = None
+        if filter_column and filter_value:
+            if filter_column in headers:
+                filter_col = headers.index(filter_column)
+            else:
+                print(f"⚠ 未找到过滤列「{filter_column}」，跳过过滤")
+
+        # 指定行号集合（1-based Excel 行号，如 "3,5,10-20"）
+        selected_rows: Optional[set] = None
+        if rows:
+            selected_rows = set()
+            for part in rows.split(","):
+                part = part.strip()
+                if "-" in part:
+                    a, b = part.split("-", 1)
+                    selected_rows.update(range(int(a), int(b) + 1))
+                elif part:
+                    selected_rows.add(int(part))
+
         items: List[Tuple[int, dict, Any]] = []
         bad: List[dict] = []
-        for row_no, row in enumerate(rows, start=2):  # 表头为第1行，数据从第2行起
+        filtered = 0
+        for row_no, row in enumerate(rows_iter, start=2):
+            # 指定行号时：不在集合内则跳过
+            if selected_rows is not None and row_no not in selected_rows:
+                continue
+
+            # 过滤列：值不匹配则跳过
+            if filter_col is not None:
+                filter_cell = row[filter_col] if filter_col < len(row) else None
+                if str(filter_cell).strip() != filter_value:
+                    filtered += 1
+                    continue
+
             if limit and len(items) >= limit:
                 break
             cell = row[col] if col < len(row) else None
@@ -137,7 +172,7 @@ def load_requests(excel_path: str, column: str, type_column: str, sheet: Any,
             payload["return_details"] = True
             error_type = row[type_col] if type_col is not None and type_col < len(row) else None
             items.append((row_no, payload, error_type))
-        return items, bad
+        return items, bad, filtered
     finally:
         wb.close()
 
@@ -191,7 +226,7 @@ def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
     """把接口响应提取成 (明细resp, 内部统计)。
 
     明细resp：
-    - final_has_errors=true：{"final_has_errors": true, "summary_content": "<原始JSON串>"}
+    - final_has_errors=true：{"final_has_errors": true, "summary_content": {…解析后的JSON对象…}}
     - final_has_errors=false：{"final_has_errors": false}
     - final_has_errors=null（content为空/非JSON/缺键）：resp 由调用方替换为接口原始返回
     响应非法时返回 (None, 统计)。
@@ -223,7 +258,7 @@ def extract_result(resp: Any) -> Tuple[Optional[dict], dict]:
         stats["error_count"] = len(summary_parsed.get("error_list") or [])
         detail["final_has_errors"] = fhe
         if fhe is True:
-            detail["summary_content"] = content
+            detail["summary_content"] = summary_parsed
         if fhe is None and "final_has_error" not in summary_parsed and "final_has_errors" not in summary_parsed:
             stats["null_cause"] = "final_has_error键缺失"
     else:
@@ -342,12 +377,28 @@ def main() -> None:
     ap.add_argument("--output", default="api_test_results.jsonl",
                     help="结果明细文件路径（JSONL）")
     ap.add_argument("--limit", type=int, default=0, help="只取前 N 行（0=全部）")
+    ap.add_argument("--filter-column", default="",
+                    help="过滤列名（如「检查结果」），与 --filter-value 配合使用")
+    ap.add_argument("--filter-value", default="",
+                    help="过滤值（如「通过」），该列值等于此值时才发送")
+    ap.add_argument("--rows", default="",
+                    help="指定 Excel 行号（逗号分隔，支持范围如 3,5,10-20），优先于过滤列")
     args = ap.parse_args()
 
     sheet: Any = int(args.sheet) if args.sheet.isdigit() else args.sheet
     print(f"读取 {args.excel} [sheet={sheet}] 列「{args.column}」 ...")
-    items, bad = load_requests(args.excel, args.column, args.type_column, sheet, args.limit)
-    print(f"有效请求 {len(items)} 条（已强制 return_details=True），解析失败 {len(bad)} 条")
+    items, bad, filtered = load_requests(
+        args.excel, args.column, args.type_column, sheet, args.limit,
+        filter_column=args.filter_column or None,
+        filter_value=args.filter_value or None,
+        rows=args.rows or None)
+    filter_desc = ""
+    if args.rows:
+        filter_desc = f"，指定行号 {args.rows}"
+    elif args.filter_column and args.filter_value:
+        filter_desc = f"，过滤「{args.filter_column}={args.filter_value}」"
+    print(f"有效请求 {len(items)} 条（已强制 return_details=True{filter_desc}），"
+          f"解析失败 {len(bad)} 条，被过滤跳过 {filtered} 条")
     for b in bad[:10]:
         print(f"  ⚠ 第{b['row']}行: {b['error']}")
     if bad:
