@@ -1,4 +1,4 @@
- #!/usr/bin/env python3
+#!/usr/bin/env python3
 """现网请求回放测试脚本：从 Excel「请求」列读取 Python 格式的请求串，并发回放到质检接口。
 
 数据格式：Excel 指定列（默认列名「请求」）每行一个字符串，是现网爬取的 Python dict
@@ -104,11 +104,13 @@ def load_requests(excel_path: str, column: str, type_column: str, sheet: Any,
                   limit: int,
                   filter_column: Optional[str] = None,
                   filter_value: Optional[str] = None,
-                  rows: Optional[str] = None) -> Tuple[List[Tuple[int, dict, Any]], List[dict], int]:
+                  rows: Optional[str] = None,
+                  model_id: Optional[str] = None) -> Tuple[List[Tuple[int, dict, Any]], List[dict], int]:
     """读取 Excel 指定列，返回 ([(Excel行号, 请求dict, 问题类型), ...], 解析失败列表, 被过滤条数)。
 
     解析成功的请求强制 return_details=True；问题类型列不存在时类型值记 None。
     过滤：filter_column + filter_value 匹配时保留；rows 指定 Excel 行号集合（逗号分隔）优先。
+    model_id：非空时覆盖每个请求中的 model_id 字段。
     """
     wb = load_workbook(excel_path, read_only=True, data_only=True)
     try:
@@ -170,6 +172,8 @@ def load_requests(excel_path: str, column: str, type_column: str, sheet: Any,
                             "text_head": text[:120]})
                 continue
             payload["return_details"] = True
+            if model_id:
+                payload["model_id"] = model_id
             error_type = row[type_col] if type_col is not None and type_col < len(row) else None
             items.append((row_no, payload, error_type))
         return items, bad, filtered
@@ -383,6 +387,8 @@ def main() -> None:
                     help="过滤值（如「通过」），该列值等于此值时才发送")
     ap.add_argument("--rows", default="",
                     help="指定 Excel 行号（逗号分隔，支持范围如 3,5,10-20），优先于过滤列")
+    ap.add_argument("--model-id", default="",
+                    help="覆盖请求数据中的 model_id 字段（为空则不覆盖）")
     args = ap.parse_args()
 
     sheet: Any = int(args.sheet) if args.sheet.isdigit() else args.sheet
@@ -391,12 +397,15 @@ def main() -> None:
         args.excel, args.column, args.type_column, sheet, args.limit,
         filter_column=args.filter_column or None,
         filter_value=args.filter_value or None,
-        rows=args.rows or None)
+        rows=args.rows or None,
+        model_id=args.model_id or None)
     filter_desc = ""
     if args.rows:
         filter_desc = f"，指定行号 {args.rows}"
     elif args.filter_column and args.filter_value:
         filter_desc = f"，过滤「{args.filter_column}={args.filter_value}」"
+    if args.model_id:
+        filter_desc += f"，model_id={args.model_id}"
     print(f"有效请求 {len(items)} 条（已强制 return_details=True{filter_desc}），"
           f"解析失败 {len(bad)} 条，被过滤跳过 {filtered} 条")
     for b in bad[:10]:
