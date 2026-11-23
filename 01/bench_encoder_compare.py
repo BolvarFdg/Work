@@ -147,21 +147,44 @@ def load_tower_only(model_dir: str, npu_dev: int, attn_impl: str):
     return tower
 
 
-def get_mel_inputs(feats):
-    """从 feature_extractor 输出里取 (mel, feature_lens)。"""
+def get_tower_inputs(feats):
+    """把 feature_extractor 的输出转成塔的输入契约。
+
+    塔期望 (照抄 thinker forward L1931-1935 的变换):
+      input_features: (mel_bins, total_valid_frames) 二维, 无 batch 维, 无 padding
+      feature_lens:   (num_audios,) 每条音频的真实帧数
+    FE 返回的是 padding 过的 [B, mel, T] + attention_mask, 直接喂会报
+    split_with_sizes 帧数对不上的错误。
+    """
     mel = feats["input_features"]
     if isinstance(mel, (list, tuple)):
         mel = mel[0]
-    if mel.dim() == 2:  # [mel, T] -> [1, mel, T]
+    if mel.dim() == 2:
         mel = mel.unsqueeze(0)
-    if "feature_lens" in feats:
+
+    mask = None
+    for key in ("feature_attention_mask", "attention_mask"):
+        if key in feats:
+            m = feats[key]
+            if isinstance(m, (list, tuple)):
+                m = m[0]
+            mask = m.bool()
+            break
+
+    if mask is not None:
+        flens = mask.sum(-1)
+        # [B, mel, T] -> [B, T, mel] -> 掩码选择 [total_valid, mel] -> [mel, total_valid]
+        inp = mel.permute(0, 2, 1)[mask].permute(1, 0)
+    elif "feature_lens" in feats:
         flens = feats["feature_lens"]
-    elif "attention_mask" in feats:
-        flens = feats["attention_mask"].sum(-1)
+        inp = mel[0]
     else:
         flens = torch.tensor([mel.shape[-1]], dtype=torch.long)
+        inp = mel[0]
     flens = torch.as_tensor(flens, dtype=torch.long).reshape(-1)
-    return mel, flens
+    assert inp.shape[1] == int(flens.sum()), \
+        f"mel 总帧数 {inp.shape[1]} != feature_lens 之和 {int(flens.sum())}"
+    return inp, flens
 
 
 def run_transformers(tower, audio: np.ndarray, model_dir: str,
@@ -176,9 +199,10 @@ def run_transformers(tower, audio: np.ndarray, model_dir: str,
                                     return_tensors="pt")
     mel_time_ms = (time.perf_counter() - t0) * 1000
 
-    mel, flens = get_mel_inputs(feats)
-    print(f"[transformers] mel: shape={tuple(mel.shape)}, "
-          f"frames={int(flens[0])}, 提取耗时 {mel_time_ms:.2f} ms (CPU, 每条一次)")
+    mel, flens = get_tower_inputs(feats)
+    print(f"[transformers] mel: 塔输入 shape={tuple(mel.shape)} "
+          f"(mel_bins, 有效帧), frames={int(flens[0])}, "
+          f"提取耗时 {mel_time_ms:.2f} ms (CPU, 每条一次)")
 
     dev = tower.conv2d1.weight.device
     mel_npu = mel.to(dev)
@@ -326,7 +350,7 @@ def run_vllm(model_dir, audio, rounds, warmup, port, npu_dev, gpu_util,
         proc_fe = AutoProcessor.from_pretrained(model_dir).feature_extractor
         feats = proc_fe([load_audio_16k(parity_wav)], sampling_rate=16000,
                         return_tensors="pt")
-        mel, flens = get_mel_inputs(feats)
+        mel, flens = get_tower_inputs(feats)
         dev = tower.conv2d1.weight.device
         with torch.inference_mode():
             tf_out = tower(input_features=mel.to(dev),
