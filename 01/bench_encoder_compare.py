@@ -150,41 +150,48 @@ def load_tower_only(model_dir: str, npu_dev: int, attn_impl: str):
 def get_tower_inputs(feats):
     """把 feature_extractor 的输出转成塔的输入契约。
 
-    塔期望 (照抄 thinker forward L1931-1935 的变换):
+    塔期望 (照抄 thinker forward 的变换):
       input_features: (mel_bins, total_valid_frames) 二维, 无 batch 维, 无 padding
       feature_lens:   (num_audios,) 每条音频的真实帧数
-    FE 返回的是 padding 过的 [B, mel, T] + attention_mask, 直接喂会报
-    split_with_sizes 帧数对不上的错误。
+
+    FE 实际返回的是 padding 过的 [B, mel, T] (T 凑到 100 帧整数倍) 外加:
+      - "feature_lens": 真实帧数 (帧单位, 权威值) —— 优先用
+      - "attention_mask": 可能是帧级 [B,T] 或样本级 [B,样本数] (如 [1,480000])
+    本脚本 batch=1, 统一走"按真实长度裁尾部 padding"路线, 简单且对三种 FE 输出都对。
     """
     mel = feats["input_features"]
     if isinstance(mel, (list, tuple)):
         mel = mel[0]
     if mel.dim() == 2:
-        mel = mel.unsqueeze(0)
+        mel = mel.unsqueeze(0)  # [B, mel_bins, T_padded]
 
-    mask = None
-    for key in ("feature_attention_mask", "attention_mask"):
-        if key in feats:
-            m = feats[key]
-            if isinstance(m, (list, tuple)):
-                m = m[0]
-            mask = m.bool()
-            break
-
-    if mask is not None:
-        flens = mask.sum(-1)
-        # [B, mel, T] -> [B, T, mel] -> 掩码选择 [total_valid, mel] -> [mel, total_valid]
-        inp = mel.permute(0, 2, 1)[mask].permute(1, 0)
-    elif "feature_lens" in feats:
-        flens = feats["feature_lens"]
-        inp = mel[0]
+    if "feature_lens" in feats:
+        flens = torch.as_tensor(feats["feature_lens"]).reshape(-1).long()
     else:
-        flens = torch.tensor([mel.shape[-1]], dtype=torch.long)
-        inp = mel[0]
-    flens = torch.as_tensor(flens, dtype=torch.long).reshape(-1)
-    assert inp.shape[1] == int(flens.sum()), \
-        f"mel 总帧数 {inp.shape[1]} != feature_lens 之和 {int(flens.sum())}"
-    return inp, flens
+        mask = None
+        for key in ("feature_attention_mask", "attention_mask"):
+            if key in feats:
+                m = feats[key]
+                if isinstance(m, (list, tuple)):
+                    m = m[0]
+                mask = torch.as_tensor(m)
+                break
+        if mask is None:
+            flens = torch.tensor([mel.shape[-1]], dtype=torch.long)
+        elif mask.shape[-1] == mel.shape[-1]:  # 帧级 mask
+            flens = mask.sum(-1).long()
+        else:  # 样本级 mask (样本数), 换算成帧
+            hop = mask.shape[-1] / mel.shape[-1]
+            flens = torch.round(mask.float().sum(-1) / hop).long()
+            flens = flens.clamp(max=mel.shape[-1])
+
+    t_valid = int(flens.sum())
+    assert 0 < t_valid <= mel.shape[-1], \
+        f"有效帧数 {t_valid} 越界 (mel T={mel.shape[-1]})"
+    if t_valid < mel.shape[-1]:
+        print(f"  mel 裁剪 padding: {mel.shape[-1]} -> {t_valid} 帧")
+    inp = mel[0][:, :t_valid]  # [mel_bins, t_valid]
+    return inp, torch.tensor([t_valid], dtype=torch.long)
 
 
 def run_transformers(tower, audio: np.ndarray, model_dir: str,
