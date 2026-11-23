@@ -206,6 +206,17 @@ def run_transformers(tower, audio: np.ndarray, model_dir: str,
                                     return_tensors="pt")
     mel_time_ms = (time.perf_counter() - t0) * 1000
 
+    # mel 冷/热分开: 首次含 FFT plan 初始化/线程池启动, 不代表稳态
+    mel_warm_ms = []
+    for _ in range(5):
+        t0 = time.perf_counter()
+        proc.feature_extractor([audio], sampling_rate=16000,
+                               return_tensors="pt")
+        mel_warm_ms.append((time.perf_counter() - t0) * 1000)
+    print(f"  mel 复跑 5 次 (稳态): "
+          f"{' / '.join(f'{t:.1f}' for t in mel_warm_ms)} ms "
+          f"| cold {mel_time_ms:.1f} ms | torch 线程数 {torch.get_num_threads()}")
+
     mel, flens = get_tower_inputs(feats)
     print(f"[transformers] mel: 塔输入 shape={tuple(mel.shape)} "
           f"(mel_bins, 有效帧), frames={int(flens[0])}, "
@@ -343,14 +354,32 @@ def run_vllm(model_dir, audio, rounds, warmup, port, npu_dev, gpu_util,
         report("primer roundtrip", stats_ms(times))
 
         # ---- 数值一致性: 同一段音频, 两边输出逐 token 余弦 ----
-        resp = primer_request(session, port, model_dir, parity_wav, parity_uuid)
-        mm_hash = extract_audio_mm_hash(resp)
-        ec_file = Path(ec_dir) / mm_hash / "encoder_cache.safetensors"
-        for _ in range(50):  # 等落盘 (正常应在响应前已完成)
-            if ec_file.exists():
-                break
-            time.sleep(0.1)
-        ec_out = st_load(str(ec_file))["ec_cache"].float()
+        # 注意: [parity] 行打在脚本自己的 stdout (不在 vllm_server.log 里)
+        print("[parity] 发起校验: 同一段音频, 两边各跑一遍塔...")
+        try:
+            resp = primer_request(session, port, model_dir, parity_wav,
+                                   parity_uuid)
+            if not resp.get("ec_transfer_params"):
+                print(f"[parity] ⚠ 响应缺少 ec_transfer_params, "
+                      f"顶层 keys: {list(resp.keys())}")
+            mm_hash = extract_audio_mm_hash(resp)
+            ec_file = Path(ec_dir) / mm_hash / "encoder_cache.safetensors"
+            for _ in range(50):  # 等落盘 (正常应在响应前已完成)
+                if ec_file.exists():
+                    break
+                time.sleep(0.1)
+            if not ec_file.exists():
+                existing = sorted(p.name for p in Path(ec_dir).glob("*"))
+                raise FileNotFoundError(
+                    f"5s 内未见 {ec_file}\n  ec_dir={ec_dir} "
+                    f"现有 {len(existing)} 个条目: {existing[:8]}")
+            ec_out = st_load(str(ec_file))["ec_cache"].float()
+            print(f"[parity] EC 缓存已读: shape={tuple(ec_out.shape)}, "
+                  f"mm_hash={mm_hash[:16]}...")
+        except Exception as e:
+            print(f"[parity] ⚠ vllm 侧取数失败, 跳过校验: "
+                  f"{type(e).__name__}: {e}")
+            return stats_ms(times)
 
         # transformers 侧对同一个变体文件重跑一次 (同源解码, 保证可比)
         from transformers import AutoProcessor
