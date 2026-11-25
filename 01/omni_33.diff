@@ -1,5 +1,5 @@
 diff --git a/vllm/model_executor/models/qwen2_5_omni_thinker.py b/vllm/model_executor/models/qwen2_5_omni_thinker.py
-index 350e298..efa9b6f 100644
+index 350e298..3ef58fc 100644
 --- a/vllm/model_executor/models/qwen2_5_omni_thinker.py
 +++ b/vllm/model_executor/models/qwen2_5_omni_thinker.py
 @@ -290,14 +290,54 @@ class Qwen2_5OmniAudioFeatureInputs(TensorSchema):
@@ -143,7 +143,7 @@ index 350e298..efa9b6f 100644
          if input_audio_features is None:
              return None
  
-@@ -1028,8 +1113,19 @@ class Qwen2_5OmniConditionalGenerationMixin:
+@@ -1028,8 +1113,22 @@ class Qwen2_5OmniConditionalGenerationMixin:
  
      def _process_audio_input(
          self,
@@ -152,19 +152,22 @@ index 350e298..efa9b6f 100644
      ) -> torch.Tensor:
 +        if audio_input["type"] == "audio_embeds":
 +            # Pre-computed tower outputs: skip the audio tower entirely.
++            # NOTE: dtype comes from the language model (not audio_tower) so
++            # this path keeps working when the tower is skipped via
++            # `--limit-mm-per-prompt {"audio": 0}`.
 +            audio_embeds = audio_input["audio_embeds"]
 +            audio_feature_lengths = audio_input["audio_feature_lengths"]
 +            audio_output_lengths = _get_feat_extract_output_lengths(
 +                audio_feature_lengths
 +            )[1]
-+            return audio_embeds.to(self.audio_tower.dtype).split(
++            return audio_embeds.to(self.language_model.dtype).split(
 +                audio_output_lengths.tolist()
 +            )
 +
          input_features = audio_input["input_features"]
          # audio_feature_lengths is keep_on_cpu; the audio tower derives
          # device placement from feature_lens, so move it explicitly.
-@@ -1215,7 +1311,7 @@ class Qwen2_5OmniThinkerForConditionalGeneration(
+@@ -1215,7 +1314,7 @@ class Qwen2_5OmniThinkerForConditionalGeneration(
                      **kwargs
                  )
              if (
@@ -174,7 +177,7 @@ index 350e298..efa9b6f 100644
              ):
                  mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(
 diff --git a/vllm/model_executor/models/qwen3_omni_moe_thinker.py b/vllm/model_executor/models/qwen3_omni_moe_thinker.py
-index 36cec2f..9a42495 100755
+index 36cec2f..6d9a089 100755
 --- a/vllm/model_executor/models/qwen3_omni_moe_thinker.py
 +++ b/vllm/model_executor/models/qwen3_omni_moe_thinker.py
 @@ -100,6 +100,7 @@ from .interfaces import (
@@ -195,7 +198,7 @@ index 36cec2f..9a42495 100755
          )
  
      def get_supported_mm_limits(self) -> Mapping[str, int | None]:
-@@ -1584,8 +1588,24 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
+@@ -1584,8 +1588,27 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
  class Qwen3OmniMoeConditionalGenerationMixin(Qwen2_5OmniConditionalGenerationMixin):
      def _process_audio_input(
          self,
@@ -207,13 +210,16 @@ index 36cec2f..9a42495 100755
 +            # `audio_feature_lengths` holds mel frame lengths; the token count
 +            # formula matches the tower, so the split aligns with the
 +            # placeholders expanded from the same lengths.
++            # NOTE: dtype comes from the language model (not audio_tower) so
++            # this path keeps working when the tower is skipped via
++            # `--limit-mm-per-prompt {"audio": 0}`.
 +            audio_embeds = audio_input["audio_embeds"]
 +            audio_feature_lengths = audio_input["audio_feature_lengths"]
 +            audio_output_lengths = _get_feat_extract_output_lengths(
 +                audio_feature_lengths
 +            )
 +            return tuple(
-+                audio_embeds.to(self.audio_tower.dtype).split(
++                audio_embeds.to(self.language_model.dtype).split(
 +                    audio_output_lengths.tolist()
 +                )
 +            )
@@ -221,7 +227,7 @@ index 36cec2f..9a42495 100755
          input_features = audio_input["input_features"]
          # audio_feature_lengths is keep_on_cpu; the audio tower derives
          # device placement from feature_lens, so move it explicitly.
-@@ -1785,6 +1805,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
+@@ -1785,6 +1808,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
              Qwen2_5_VLImageInputs
              | Qwen2_5_VLVideoInputs
              | Qwen2_5OmniAudioFeatureInputs
@@ -229,7 +235,7 @@ index 36cec2f..9a42495 100755
              | None,
          ] = {}
  
-@@ -1806,7 +1827,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
+@@ -1806,7 +1830,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                      **kwargs
                  )
              if (
