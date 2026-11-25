@@ -241,7 +241,8 @@ def run_transformers(tower, audio: np.ndarray, model_dir: str,
 
     print(f"[transformers] 塔 forward × {rounds} 轮:")
     report("tower forward", stats_ms(times))
-    return out.last_hidden_state.float().cpu(), stats_ms(times), mel_time_ms
+    return (out.last_hidden_state.float().cpu(), stats_ms(times), mel_time_ms,
+            min(mel_warm_ms))
 
 
 # ---------------------------------------------------------------------------
@@ -282,12 +283,15 @@ def primer_request(session, port, model_dir, wav_path, uuid):
 
 
 def extract_audio_mm_hash(resp_json):
+    # 真实格式 (ec_connector/utils.py collect_ec_item_metadata):
+    #   {mm_hash: {"modality": "audio", "item_indices": [...], "metadata": {...}}}
+    # mm_hash 是外层 dict 的 key, 不是条目内的字段
     ec = resp_json.get("ec_transfer_params") or {}
-    # 响应结构: {item_index: {"modality": "audio", "mm_hash": ..., "metadata": {...}}}
-    for v in ec.values():
+    for mm_hash, v in ec.items():
         if isinstance(v, dict) and v.get("modality") == "audio":
-            return v["mm_hash"]
-    raise RuntimeError(f"响应里没有 audio 的 ec_transfer_params: {resp_json.keys()}")
+            return mm_hash
+    raise RuntimeError(f"响应里没有 audio 的 ec_transfer_params: "
+                       f"{list(ec.keys())} / 顶层: {list(resp_json.keys())}")
 
 
 def run_vllm(model_dir, audio, rounds, warmup, port, npu_dev, gpu_util,
@@ -359,9 +363,14 @@ def run_vllm(model_dir, audio, rounds, warmup, port, npu_dev, gpu_util,
         try:
             resp = primer_request(session, port, model_dir, parity_wav,
                                    parity_uuid)
-            if not resp.get("ec_transfer_params"):
+            ec_params = resp.get("ec_transfer_params") or {}
+            if not ec_params:
                 print(f"[parity] ⚠ 响应缺少 ec_transfer_params, "
                       f"顶层 keys: {list(resp.keys())}")
+            else:
+                # metadata 里的字段 (如 audio_num_tokens) 是后续
+                # metadata-only 请求需要的, 顺便打出来确认
+                print(f"[parity] ec_transfer_params: {ec_params}")
             mm_hash = extract_audio_mm_hash(resp)
             ec_file = Path(ec_dir) / mm_hash / "encoder_cache.safetensors"
             for _ in range(50):  # 等落盘 (正常应在响应前已完成)
@@ -442,7 +451,7 @@ if __name__ == "__main__":
     try:
         # A) transformers 塔直跑
         tower = load_tower_only(args.model, args.npu, args.tf_attn)
-        tf_out, tf_stats, mel_ms = run_transformers(
+        tf_out, tf_stats, mel_ms, mel_warm_ms = run_transformers(
             tower, audio, args.model, args.rounds, args.warmup)
 
         # B) vllm encoder-only 实例
@@ -455,13 +464,13 @@ if __name__ == "__main__":
         print("结果汇总 (越小越好)")
         print("-" * 62)
         report("A transformers 塔 forward", tf_stats)
-        print(f"  (另计: mel 特征提取 {mel_ms:.2f} ms/条, CPU)")
+        print(f"  (另计: mel 提取 cold {mel_ms:.1f} / 稳态 {mel_warm_ms:.1f} ms, CPU)")
         report("B vllm primer 全链路", vllm_stats)
         print("-" * 62)
         print("解读:")
-        print("  * B 含 mel+HTTP 开销, A 不含 —— B 若仍 ≤ A, 迁移结论成立且更硬")
-        print("  * 差值即每条音频可省的 TTFT; 乘以 QPS 得吞吐收益")
-        print("  * B 中 vllm 内部真正的塔时间 < B, 想细分可看 server 日志")
+        print("  * B = mel(稳态) + vllm塔 + HTTP/调度/落盘杂项, A 只是塔本身")
+        print("  * 生产关键路径对比: 现状 = A + mel + omni内部塔(再跑一遍);")
+        print("    EC = B 一趟 —— 差值即每条音频省下的 TTFT")
         print("=" * 62)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
