@@ -1,0 +1,240 @@
+diff --git a/vllm/model_executor/models/qwen2_5_omni_thinker.py b/vllm/model_executor/models/qwen2_5_omni_thinker.py
+index 350e298..efa9b6f 100644
+--- a/vllm/model_executor/models/qwen2_5_omni_thinker.py
++++ b/vllm/model_executor/models/qwen2_5_omni_thinker.py
+@@ -290,14 +290,54 @@ class Qwen2_5OmniAudioFeatureInputs(TensorSchema):
+     ]
+ 
+ 
++class Qwen2_5OmniAudioEmbeddingInputs(TensorSchema):
++    """Pre-computed audio tower outputs passed directly to the model.
++
++    Dimensions:
++    - na: Number of audios
++    - tsl: Total sequence length in audio tokens
++    - hs: Hidden size (must match the audio tower output size)
++
++    `audio_feature_lengths` holds the mel frame length of each audio (NOT the
++    token count); the placeholder range and M-RoPE positions are derived from
++    it with the same formula the tower uses, so `audio_embeds` must contain
++    exactly `output_lengths(frames)` tokens per audio.
++    """
++
++    type: Literal["audio_embeds"]
++
++    audio_embeds: Annotated[torch.Tensor, TensorShape("tsl", "hs")]
++
++    audio_feature_lengths: Annotated[torch.Tensor, TensorShape("na")]
++
++
+ def create_qwen2_5_omni_thinker_field_factory(
+     spatial_merge_size: int,
++    audio_output_lengths_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+ ) -> Callable[[Mapping[str, torch.Tensor]], Mapping[str, MultiModalFieldConfig]]:
++    """``audio_output_lengths_fn`` maps mel frame lengths to audio token counts.
++
++    It is needed to size the ``audio_embeds`` placeholder range. Qwen2.5-Omni
++    and Qwen3-Omni towers use different downsampling formulas, so the model
++    passes its own; the default matches Qwen2.5-Omni (two stride-2 convs).
++    """
++
++    if audio_output_lengths_fn is None:
++
++        def _qwen2_5_audio_output_lengths(input_lengths: torch.Tensor):
++            return _get_feat_extract_output_lengths(input_lengths)[1]
++
++        audio_output_lengths_fn = _qwen2_5_audio_output_lengths
++
+     def _qwen2_5_omni_thinker_field_config(hf_inputs: Mapping[str, torch.Tensor]):
+         audio_feature_lengths = hf_inputs.get(
+             "audio_feature_lengths", torch.empty((0,))
+         ).flatten()
+ 
++        audio_embed_token_sizes = audio_output_lengths_fn(
++            audio_feature_lengths
++        ).tolist()
++
+         image_grid_thw = hf_inputs.get("image_grid_thw", torch.empty((0, 3)))
+         image_pixel_grid_sizes = image_grid_thw.prod(-1)
+         image_embed_grid_sizes = (
+@@ -316,6 +356,9 @@ def create_qwen2_5_omni_thinker_field_factory(
+             input_audio_features=MultiModalFieldConfig.flat_from_sizes(
+                 "audio", audio_feature_lengths, dim=1
+             ),
++            audio_embeds=MultiModalFieldConfig.flat_from_sizes(
++                "audio", audio_embed_token_sizes
++            ),
+             feature_attention_mask=MultiModalFieldConfig.batched(
+                 "audio", keep_on_cpu=True
+             ),
+@@ -358,8 +401,15 @@ class Qwen2_5OmniThinkerMultiModalDataParser(Qwen2VLMultiModalDataParser):
+         },
+     }
+ 
+-    def __init__(self, spatial_merge_size: int, *args, **kwargs):
++    def __init__(
++        self,
++        spatial_merge_size: int,
++        *args,
++        audio_output_lengths_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
++        **kwargs,
++    ):
+         self._spatial_merge_size = spatial_merge_size
++        self._audio_output_lengths_fn = audio_output_lengths_fn
+         super().__init__(self._spatial_merge_size, *args, **kwargs)
+ 
+     def _parse_audio_data(
+@@ -367,10 +417,25 @@ class Qwen2_5OmniThinkerMultiModalDataParser(Qwen2VLMultiModalDataParser):
+         data: dict[str, torch.Tensor] | ModalityData[ImageItem],
+     ) -> ModalityDataItems[Any, Any] | None:
+         if isinstance(data, dict):
+-            required, optional = self.embedding_field_sets("audio")
+             data = dict(data)
+             if "audio_feature_lengths" in data:
+                 data["audio_feature_lengths"] = data["audio_feature_lengths"].flatten()
++
++            if "audio_embeds" in data:
++                # Pre-computed audio tower outputs: bypass mel extraction and
++                # the tower entirely. Required fields are managed here instead
++                # of `embedding_field_sets` so the mel-feature path keeps its
++                # own (mutually exclusive) required set.
++                return DictEmbeddingItems(
++                    data,
++                    modality="audio",
++                    required_fields={"audio_embeds", "audio_feature_lengths"},
++                    fields_factory=create_qwen2_5_omni_thinker_field_factory(
++                        self._spatial_merge_size, self._audio_output_lengths_fn
++                    ),
++                )
++
++            required, optional = self.embedding_field_sets("audio")
+             return DictEmbeddingItems(
+                 data,
+                 modality="audio",
+@@ -944,10 +1009,30 @@ class Qwen2_5OmniConditionalGenerationMixin:
+ 
+     def _parse_and_validate_audio_input(
+         self, **kwargs: object
+-    ) -> Qwen2_5OmniAudioFeatureInputs | None:
++    ) -> Qwen2_5OmniAudioFeatureInputs | Qwen2_5OmniAudioEmbeddingInputs | None:
+         input_audio_features = kwargs.pop("input_audio_features", None)
++        audio_embeds = kwargs.pop("audio_embeds", None)
+         audio_feature_lengths = kwargs.pop("audio_feature_lengths", None)
+         feature_attention_mask = kwargs.pop("feature_attention_mask", None)
++
++        if audio_embeds is not None:
++            if audio_feature_lengths is None:
++                raise ValueError(
++                    "Passing audio_embeds requires audio_feature_lengths (the mel "
++                    "frame length of each audio) so that the placeholder range "
++                    "can be sized."
++                )
++            if not isinstance(audio_embeds, torch.Tensor):
++                raise ValueError(
++                    "Incorrect type of audio embeddings. "
++                    f"Got type: {type(audio_embeds)}"
++                )
++            return Qwen2_5OmniAudioEmbeddingInputs(
++                type="audio_embeds",
++                audio_embeds=audio_embeds,
++                audio_feature_lengths=audio_feature_lengths,
++            )
++
+         if input_audio_features is None:
+             return None
+ 
+@@ -1028,8 +1113,19 @@ class Qwen2_5OmniConditionalGenerationMixin:
+ 
+     def _process_audio_input(
+         self,
+-        audio_input: Qwen2_5OmniAudioFeatureInputs,
++        audio_input: Qwen2_5OmniAudioFeatureInputs | Qwen2_5OmniAudioEmbeddingInputs,
+     ) -> torch.Tensor:
++        if audio_input["type"] == "audio_embeds":
++            # Pre-computed tower outputs: skip the audio tower entirely.
++            audio_embeds = audio_input["audio_embeds"]
++            audio_feature_lengths = audio_input["audio_feature_lengths"]
++            audio_output_lengths = _get_feat_extract_output_lengths(
++                audio_feature_lengths
++            )[1]
++            return audio_embeds.to(self.audio_tower.dtype).split(
++                audio_output_lengths.tolist()
++            )
++
+         input_features = audio_input["input_features"]
+         # audio_feature_lengths is keep_on_cpu; the audio tower derives
+         # device placement from feature_lens, so move it explicitly.
+@@ -1215,7 +1311,7 @@ class Qwen2_5OmniThinkerForConditionalGeneration(
+                     **kwargs
+                 )
+             if (
+-                input_key in ("input_audio_features")
++                input_key in ("input_audio_features", "audio_embeds")
+                 and "audio" not in mm_input_by_modality
+             ):
+                 mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(
+diff --git a/vllm/model_executor/models/qwen3_omni_moe_thinker.py b/vllm/model_executor/models/qwen3_omni_moe_thinker.py
+index 36cec2f..9a42495 100755
+--- a/vllm/model_executor/models/qwen3_omni_moe_thinker.py
++++ b/vllm/model_executor/models/qwen3_omni_moe_thinker.py
+@@ -100,6 +100,7 @@ from .interfaces import (
+     SupportsTranscription,
+ )
+ from .qwen2_5_omni_thinker import (
++    Qwen2_5OmniAudioEmbeddingInputs,
+     Qwen2_5OmniAudioFeatureInputs,
+     Qwen2_5OmniConditionalGenerationMixin,
+     Qwen2_5OmniThinkerDummyInputsBuilder,
+@@ -1191,6 +1192,9 @@ class Qwen3OmniMoeThinkerProcessingInfo(
+             target_channels=self.get_target_channels(),
+             expected_hidden_size=self._get_expected_hidden_size(),
+             allow_missing_mm_embeddings=self.allow_missing_mm_embeddings,
++            # Qwen3-Omni tower: 3 stride-2 convs + 13 tokens per 1s chunk.
++            # Used to size the audio_embeds placeholder range.
++            audio_output_lengths_fn=_get_feat_extract_output_lengths,
+         )
+ 
+     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+@@ -1584,8 +1588,24 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
+ class Qwen3OmniMoeConditionalGenerationMixin(Qwen2_5OmniConditionalGenerationMixin):
+     def _process_audio_input(
+         self,
+-        audio_input: Qwen2_5OmniAudioFeatureInputs,
++        audio_input: Qwen2_5OmniAudioFeatureInputs | Qwen2_5OmniAudioEmbeddingInputs,
+     ) -> tuple[torch.Tensor, ...]:
++        if audio_input["type"] == "audio_embeds":
++            # Pre-computed tower outputs: skip the audio tower entirely.
++            # `audio_feature_lengths` holds mel frame lengths; the token count
++            # formula matches the tower, so the split aligns with the
++            # placeholders expanded from the same lengths.
++            audio_embeds = audio_input["audio_embeds"]
++            audio_feature_lengths = audio_input["audio_feature_lengths"]
++            audio_output_lengths = _get_feat_extract_output_lengths(
++                audio_feature_lengths
++            )
++            return tuple(
++                audio_embeds.to(self.audio_tower.dtype).split(
++                    audio_output_lengths.tolist()
++                )
++            )
++
+         input_features = audio_input["input_features"]
+         # audio_feature_lengths is keep_on_cpu; the audio tower derives
+         # device placement from feature_lens, so move it explicitly.
+@@ -1785,6 +1805,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
+             Qwen2_5_VLImageInputs
+             | Qwen2_5_VLVideoInputs
+             | Qwen2_5OmniAudioFeatureInputs
++            | Qwen2_5OmniAudioEmbeddingInputs
+             | None,
+         ] = {}
+ 
+@@ -1806,7 +1827,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
+                     **kwargs
+                 )
+             if (
+-                input_key in ("input_audio_features")
++                input_key in ("input_audio_features", "audio_embeds")
+                 and "audio" not in mm_input_by_modality
+             ):
+                 mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(
